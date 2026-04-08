@@ -4,29 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository (`sbx-templates`) is a Deneblab sandbox template for Claude Code .NET 10 development environments. It contains:
+`sbx-templates` is a Deneblab repository for Claude Code sandbox Docker templates. It contains:
 
-- **`src/sbx-claude-dotnet10/Dockerfile`** — Docker sandbox image based on `docker/sandbox-templates:claude-code`, adds .NET SDK 10.0, and caches NuGet packages under `/workspace/.sbx-cache/nuget/packages`.
-- **`scripts/build/version.sh` / `version.ps1`** — Semantic versioning scripts that compute a version from a `version.yaml` file (`baseVersion`, optional `baseCommitSha`) plus a git commit count increment.
-- **`.agents/`** — Agent-driven task tracking system. Project short ID: `SBXT`. Task plans and issue specs live under `.agents/ralph/`.
+- **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
+- **`scripts/build/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
+- **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
+- **`shells/sbx-runner.ps1`** — PowerShell function (dot-sourced into profile) that reads `.agents/sbx-runner.yaml` and calls `sbx run`.
+- **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`).
+- **`.agents/`** — issue tracking and agent task system. Project short ID: `SBXT`.
 
-## Environment
+## Running a Sandbox
 
-The sandbox runs with `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `DOTNET_NOLOGO=1`, and `NUGET_PACKAGES=/workspace/.sbx-cache/nuget/packages` pre-set.
-
-## Build & Test (.NET)
-
-```bash
-dotnet build src/StashLock.sln
-dotnet build src/StashLock.Cli2/StashLock.Cli2.csproj
-
-dotnet test src/StashLock.Tests
-dotnet test src/StashLock.Tests --filter "FullyQualifiedName~TestMethodName"
+```powershell
+sbx-runner               # reads .agents\sbx-runner.yaml, launches sandbox
+sbx-runner -DryRun       # preview without running
+sbx-runner -Branch feat  # named branch
 ```
+
+Requires `shells/sbx-runner.ps1` dot-sourced in `$PROFILE.CurrentUserAllHosts`.
 
 ## Local Docker Build (Taskfile)
 
-Requires [Task](https://taskfile.dev) (`task` CLI). Works on Linux, macOS, and Windows.
+Requires [Task](https://taskfile.dev). Dispatches to `.sh` (Linux/macOS) or `.ps1` (Windows) automatically.
 
 ```bash
 task version   # print computed semver
@@ -34,33 +33,19 @@ task build     # build image, load into local Docker daemon (no push)
 task push      # build and push to docker.io/pkudrel/sbx-claude-dotnet10
 ```
 
-Dispatches to `scripts/build/build-push.sh` (Linux/macOS) or `scripts/build/build-push.ps1` (Windows) automatically via `{{OS}}`.
-
-Scripts also accept flags directly:
+Direct script usage:
 ```bash
-# sh
-bash scripts/build/build-push.sh --no-push   # build only
-bash scripts/build/build-push.sh --dry-run   # print command, no execute
-
-# PowerShell
-.\scripts\build\build-push.ps1 -NoPush
-.\scripts\build\build-push.ps1 -DryRun
+bash scripts/build/build-push.sh --no-push    # build only (sh)
+bash scripts/build/build-push.sh --dry-run    # preview (sh)
+.\scripts\build\build-push.ps1 -NoPush        # build only (PowerShell)
+.\scripts\build\build-push.ps1 -DryRun        # preview (PowerShell)
 ```
 
-## Versioning Scripts
+## Versioning
 
 ```bash
-# Bash — outputs key=value pairs to stdout (or $GITHUB_OUTPUT)
-scripts/build/version.sh --file path/to/version.yaml
-
-# Version only
-scripts/build/version.sh --version-only
-
-# Override major.minor
-scripts/build/version.sh --override 1.2
-
-# PowerShell equivalent
-pwsh scripts/build/version.ps1
+scripts/build/version.sh --version-only        # e.g. 0.1.5
+pwsh scripts/build/version.ps1 -VersionOnly
 ```
 
 `version.yaml` format:
@@ -71,10 +56,10 @@ baseCommitSha: abc1234   # optional — count commits after this SHA
 
 ## Agent Task System
 
-Active plans are tracked in `.agents/ralph/IMPLEMENTATION_PLAN.md`. Each task has a detailed spec in `.agents/ralph/issues/{taskId}.issue.md`. The agent execution model follows five phases: Resume → Pattern Discovery → Issue Planning → Implementation → Completion.
+Issues tracked in `.agents/issues/{ISSUE_ID}/`. Each issue has `issue.md`, `plan.md`, `state.json`. Active implementation plans in `.agents/ralph/IMPLEMENTATION_PLAN.md`.
 
-When picking up agent work, read `IMPLEMENTATION_PLAN.md` first to understand task dependencies and current status before touching any issue files.
+Read `IMPLEMENTATION_PLAN.md` before picking up agent work to understand task dependencies and status.
 
-## Project Instructions
+## Sandbox Environment
 
-See the top-level guidance in the `CLAUDE.md` section on **Environment Persistence** for how `/etc/sandbox-persistent.sh` is sourced and the critical rules about never adding shell completion scripts to it.
+The sandbox runs with `DOTNET_CLI_TELEMETRY_OPTOUT=1`, `DOTNET_NOLOGO=1`, and `NUGET_PACKAGES=/workspace/.sbx-cache/nuget/packages` pre-set. See the project-level CLAUDE.md (inherited from the sandbox harness) for environment persistence rules and shell completion warnings.
