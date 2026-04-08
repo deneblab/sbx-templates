@@ -24,6 +24,29 @@ dotnet test src/StashLock.Tests
 dotnet test src/StashLock.Tests --filter "FullyQualifiedName~TestMethodName"
 ```
 
+## Local Docker Build (Taskfile)
+
+Requires [Task](https://taskfile.dev) (`task` CLI). Works on Linux, macOS, and Windows.
+
+```bash
+task version   # print computed semver
+task build     # build image, load into local Docker daemon (no push)
+task push      # build and push to docker.io/pkudrel/sbx-claude-dotnet10
+```
+
+Dispatches to `scripts/build/build-push.sh` (Linux/macOS) or `scripts/build/build-push.ps1` (Windows) automatically via `{{OS}}`.
+
+Scripts also accept flags directly:
+```bash
+# sh
+bash scripts/build/build-push.sh --no-push   # build only
+bash scripts/build/build-push.sh --dry-run   # print command, no execute
+
+# PowerShell
+.\scripts\build\build-push.ps1 -NoPush
+.\scripts\build\build-push.ps1 -DryRun
+```
+
 ## Versioning Scripts
 
 ```bash

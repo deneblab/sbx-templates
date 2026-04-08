@@ -1,0 +1,65 @@
+version: '3'
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  version:
+    desc: Show computed semver for current commit
+    cmds:
+      - task: "_version:{{OS}}"
+
+  build:
+    desc: "Build Docker image locally (loads into local daemon, no push)"
+    cmds:
+      - task: "_build:{{OS}}"
+
+  push:
+    desc: "Build and push Docker image to Docker Hub"
+    cmds:
+      - task: "_push:{{OS}}"
+
+  # ── Unix (Linux + macOS) ─────────────────────────────────────────────────────
+
+  "_version:linux":
+    internal: true
+    cmds: [bash scripts/build/version.sh]
+
+  "_version:darwin":
+    internal: true
+    cmds: [bash scripts/build/version.sh]
+
+  "_build:linux":
+    internal: true
+    cmds: [bash scripts/build/build-push.sh --no-push]
+
+  "_build:darwin":
+    internal: true
+    cmds: [bash scripts/build/build-push.sh --no-push]
+
+  "_push:linux":
+    internal: true
+    cmds: [bash scripts/build/build-push.sh]
+
+  "_push:darwin":
+    internal: true
+    cmds: [bash scripts/build/build-push.sh]
+
+  # ── Windows (PowerShell) ─────────────────────────────────────────────────────
+
+  "_version:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/version.ps1
+
+  "_build:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -NoPush
+
+  "_push:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1

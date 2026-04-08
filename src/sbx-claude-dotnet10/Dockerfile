@@ -33,3 +33,10 @@ ENV DOTNET_NOLOGO=1
 ENV NUGET_PACKAGES=/workspace/.sbx-cache/nuget/packages
 
 RUN dotnet --info
+
+ARG VERSION=dev
+ARG SHORT_SHA=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${SHORT_SHA}" \
+      org.opencontainers.image.created="${BUILD_DATE}"

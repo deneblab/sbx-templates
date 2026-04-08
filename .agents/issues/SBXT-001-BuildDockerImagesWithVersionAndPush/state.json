@@ -1,0 +1,10 @@
+{
+  "issueId": "SBXT-001-BuildDockerImagesWithVersionAndPush",
+  "startedAt": "2026-04-08T00:00:00Z",
+  "completedAt": "2026-04-08T00:00:00Z",
+  "files": {
+    ".github/workflows/build-push.yml": "done",
+    "src/sbx-claude-dotnet10/Dockerfile": "done",
+    "scripts/build/build-push.sh": "done"
+  }
+}
