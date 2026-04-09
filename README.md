@@ -7,8 +7,8 @@ Deneblab sandbox templates for Claude Code development environments.
 | Image | Base | Extras |
 |-------|------|--------|
 | `docker.io/pkudrel/sbx-claude-dotnet10` | `docker/sandbox-templates:claude-code` | .NET SDK 10.0 |
-| `docker.io/pkudrel/sbx-claude-dotnet10-node` | `docker/sandbox-templates:claude-code` | .NET SDK 10.0, Node.js 24.x |
-| `docker.io/pkudrel/sbx-claude-golang-node` | `docker/sandbox-templates:claude-code` | Go 1.24.2, Node.js 24.x |
+| `docker.io/pkudrel/sbx-claude-dotnet10-node2424` | `docker/sandbox-templates:claude-code` | .NET SDK 10.0, Node.js 24.x |
+| `docker.io/pkudrel/sbx-claude-golang124-node24` | `docker/sandbox-templates:claude-code` | Go 1.24.2, Node.js 24.x |
 
 ## Run a sandbox
 
@@ -59,8 +59,8 @@ task build                # build default image locally
 task push                 # build and push default image
 
 task build:dotnet10       # build sbx-claude-dotnet10
-task build:dotnet10-node  # build sbx-claude-dotnet10-node
-task build:golang-node    # build sbx-claude-golang-node
+task build:dotnet10-node24  # build sbx-claude-dotnet10-node2424
+task build:golang124-node24    # build sbx-claude-golang124-node24
 ```
 
 Docker Hub secrets required: `DOCKER_USERNAME`, `DOCKER_TOKEN`.

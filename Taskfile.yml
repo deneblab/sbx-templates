@@ -58,48 +58,48 @@ tasks:
       - task: "_push:{{OS}}"
         vars: { IMAGE: sbx-claude-dotnet10 }
 
-  # ── dotnet10-node ──────────────────────────────────────────────────────────
+  # ── dotnet10-node24 ────────────────────────────────────────────────────────
 
-  "version:dotnet10-node":
-    desc: "Show computed semver for sbx-claude-dotnet10-node"
+  "version:dotnet10-node24":
+    desc: "Show computed semver for sbx-claude-dotnet10-node24"
     cmds:
       - task: "_version:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node }
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
 
-  "build:dotnet10-node":
-    desc: "Build sbx-claude-dotnet10-node locally"
+  "build:dotnet10-node24":
+    desc: "Build sbx-claude-dotnet10-node24 locally"
     cmds:
       - task: "_build:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node }
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
 
-  "push:dotnet10-node":
-    desc: "Build and push sbx-claude-dotnet10-node"
+  "push:dotnet10-node24":
+    desc: "Build and push sbx-claude-dotnet10-node24"
     cmds:
       - task: "_push:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node }
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
 
-  # ── golang-node ─────────────────────────────────────────────────────────
+  # ── golang124-node24 ──────────────────────────────────────────────────────
 
-  "version:golang-node":
-    desc: "Show computed semver for sbx-claude-golang-node"
+  "version:golang124-node24":
+    desc: "Show computed semver for sbx-claude-golang124-node24"
     cmds:
       - task: "_version:{{OS}}"
         vars:
-          IMAGE: sbx-claude-golang-node
+          IMAGE: sbx-claude-golang124-node24
 
-  "build:golang-node":
-    desc: "Build sbx-claude-golang-node locally"
+  "build:golang124-node24":
+    desc: "Build sbx-claude-golang124-node24 locally"
     cmds:
       - task: "_build:{{OS}}"
         vars:
-          IMAGE: sbx-claude-golang-node
+          IMAGE: sbx-claude-golang124-node24
 
-  "push:golang-node":
-    desc: "Build and push sbx-claude-golang-node"
+  "push:golang124-node24":
+    desc: "Build and push sbx-claude-golang124-node24"
     cmds:
       - task: "_push:{{OS}}"
         vars:
-          IMAGE: sbx-claude-golang-node
+          IMAGE: sbx-claude-golang124-node24
 
   # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
 
