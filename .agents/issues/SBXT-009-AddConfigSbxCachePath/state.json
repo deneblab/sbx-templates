@@ -1,0 +1,11 @@
+{
+  "issueId": "SBXT-009-AddConfigSbxCachePath",
+  "status": "completed",
+  "phase": "done",
+  "files": {
+    "shells/sbx-runner.ps1": "completed",
+    "README.md": "completed"
+  },
+  "createdAt": "2026-04-09T00:00:00Z",
+  "completedAt": "2026-04-09T00:00:00Z"
+}

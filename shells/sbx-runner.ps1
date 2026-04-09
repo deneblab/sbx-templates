@@ -18,6 +18,7 @@
 #   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 #   agent: claude
 #   branch: auto
+#   cache: .sbx-cache   # optional
 
 function sbx-runner {
     [CmdletBinding()]
@@ -91,6 +92,7 @@ Config file (.agents\sbx-runner.yaml):
   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
   agent: claude
   branch: auto        # resolves to current git branch
+  cache: .sbx-cache   # optional: mount local cache dir into sandbox
 "@
         return
     }
@@ -111,7 +113,7 @@ Config file (.agents\sbx-runner.yaml):
     }
 
     function _ValidateConfig([string]$File) {
-        $knownKeys = @("template", "agent", "branch")
+        $knownKeys = @("template", "agent", "branch", "cache")
         $lines = Get-Content $File | Where-Object { $_ -match "^\s*\S+\s*:" -and $_ -notmatch "^\s*#" }
         foreach ($line in $lines) {
             $key = ($line -replace "\s*:.*", "").Trim()
@@ -153,6 +155,7 @@ branch: auto
         if (-not $Template) { $Template = _ReadYaml $Config "template" }
         if (-not $Agent)    { $Agent    = _ReadYaml $Config "agent" }
         if (-not $Branch)   { $Branch   = _ReadYaml $Config "branch" }
+        $Cache = _ReadYaml $Config "cache"
     } elseif ($Config) {
         Write-Error "Config file not found: $Config"
         return
@@ -209,9 +212,20 @@ branch: auto
         Write-Host "Branch (auto-detected): $Branch"
     }
 
+    # --- Resolve cache path --------------------------------------------------
+    if ($Cache) {
+        $cachePath = Join-Path (Get-Item .).FullName $Cache
+        if (-not (Test-Path $cachePath)) {
+            New-Item -ItemType Directory -Path $cachePath -Force | Out-Null
+            Write-Host "Created cache directory: $cachePath"
+        }
+        Write-Host "Cache: $cachePath"
+    }
+
     # --- Build and run -------------------------------------------------------
     $sbxArgs = @("run", "--template", $Template, $Agent)
     if ($Branch)    { $sbxArgs += @("--branch", $Branch) }
+    if ($Cache)     { $sbxArgs += $cachePath }
     if ($ExtraArgs) { $sbxArgs += $ExtraArgs }
 
     if ($DryRun) {

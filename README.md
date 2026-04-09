@@ -49,7 +49,10 @@ Place in `.agents\sbx-runner.yaml` of any project:
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
 branch: auto
+cache: .sbx-cache   # optional: mount local cache dir into sandbox
 ```
+
+When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
 
 ## Build and push
 
