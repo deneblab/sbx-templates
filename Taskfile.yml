@@ -82,27 +82,33 @@ tasks:
 
   "_version:linux":
     internal: true
-    cmds: [bash scripts/version/version.sh --path "src/{{.IMAGE}}"]
+    cmds:
+      - bash scripts/version/version.sh --path "src/{{.IMAGE}}"
 
   "_version:darwin":
     internal: true
-    cmds: [bash scripts/version/version.sh --path "src/{{.IMAGE}}"]
+    cmds:
+      - bash scripts/version/version.sh --path "src/{{.IMAGE}}"
 
   "_build:linux":
     internal: true
-    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push]
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push
 
   "_build:darwin":
     internal: true
-    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push]
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push
 
   "_push:linux":
     internal: true
-    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}"]
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}"
 
   "_push:darwin":
     internal: true
-    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}"]
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}"
 
   # ── Windows (PowerShell) ─────────────────────────────────────────────────
 
