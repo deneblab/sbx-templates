@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `sbx-templates` is a Deneblab repository for Claude Code sandbox Docker templates. It contains:
 
 - **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
-- **`src/sbx-claude-dotnet10-node2424/Dockerfile`** — .NET SDK 10.0 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
+- **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-golang124-node24/Dockerfile`** — Go 1.24.2 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
 - **`scripts/version/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
@@ -36,7 +36,7 @@ task build                # build default image locally (no push)
 task push                 # build and push default image
 
 task build:dotnet10       # build sbx-claude-dotnet10
-task build:dotnet10-node24  # build sbx-claude-dotnet10-node2424
+task build:dotnet10-node24  # build sbx-claude-dotnet10-node24
 task build:golang124-node24    # build sbx-claude-golang124-node24
 ```
 
