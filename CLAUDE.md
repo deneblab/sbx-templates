@@ -26,6 +26,17 @@ sbx-runner --branch feat # named branch
 
 Requires `shells/sbx-runner.ps1` dot-sourced in `$PROFILE.CurrentUserAllHosts`.
 
+### sbx-runner.yaml
+
+```yaml
+template: docker.io/pkudrel/sbx-claude-dotnet10:latest
+agent: claude
+branch: auto
+cache: .sbx-cache   # optional: mount local cache dir into sandbox
+```
+
+When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace. If not set, no cache mounting occurs.
+
 ## Local Docker Build (Taskfile)
 
 Requires [Task](https://taskfile.dev). Dispatches to `.sh` (Linux/macOS) or `.ps1` (Windows) automatically.
