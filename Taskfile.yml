@@ -78,6 +78,29 @@ tasks:
       - task: "_push:{{OS}}"
         vars: { IMAGE: sbx-claude-dotnet10-node }
 
+  # ── golang ──────────────────────────────────────────────────────────────
+
+  "version:golang":
+    desc: "Show computed semver for sbx-claude-golang"
+    cmds:
+      - task: "_version:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang
+
+  "build:golang":
+    desc: "Build sbx-claude-golang locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang
+
+  "push:golang":
+    desc: "Build and push sbx-claude-golang"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang
+
   # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
 
   "_version:linux":

@@ -1,0 +1,11 @@
+{
+  "issueId": "SBXT-007-AddGolangImage",
+  "status": "completed",
+  "phase": "done",
+  "files": {
+    "src/sbx-claude-golang/Dockerfile": "completed",
+    "Taskfile.yml": "completed"
+  },
+  "createdAt": "2026-04-09T00:00:00Z",
+  "completedAt": "2026-04-09T00:00:00Z"
+}
