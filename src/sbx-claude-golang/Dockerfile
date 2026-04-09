@@ -13,6 +13,10 @@ RUN apt-get update \
     jq \
     unzip \
     procps \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+    nodejs \
  && rm -rf /var/lib/apt/lists/*
 
 ARG GO_VERSION=1.24.2
@@ -22,6 +26,7 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
 RUN mkdir -p \
     /workspace/.sbx-cache/go/pkg \
     /workspace/.sbx-cache/go/bin \
+    /workspace/.sbx-cache/npm \
  && chown -R agent:agent /home/agent /workspace
 
 USER agent
@@ -30,8 +35,9 @@ ENV PATH="/usr/local/go/bin:/workspace/.sbx-cache/go/bin:${PATH}"
 ENV GOPATH=/workspace/.sbx-cache/go
 ENV GOMODCACHE=/workspace/.sbx-cache/go/pkg/mod
 ENV GOBIN=/workspace/.sbx-cache/go/bin
+ENV npm_config_cache=/workspace/.sbx-cache/npm
 
-RUN go version
+RUN go version && node --version && npm --version
 
 ARG VERSION=dev
 ARG SHORT_SHA=unknown
