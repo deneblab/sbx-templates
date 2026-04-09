@@ -225,7 +225,7 @@ branch: auto
     # --- Build and run -------------------------------------------------------
     $sbxArgs = @("run", "--template", $Template, $Agent)
     if ($Branch)    { $sbxArgs += @("--branch", $Branch) }
-    if ($Cache)     { $sbxArgs += $cachePath }
+    if ($Cache)     { $sbxArgs += @(".", $cachePath) }
     if ($ExtraArgs) { $sbxArgs += $ExtraArgs }
 
     if ($DryRun) {
