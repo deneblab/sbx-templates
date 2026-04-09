@@ -7,6 +7,8 @@ Deneblab sandbox templates for Claude Code development environments.
 | Image | Base | Extras |
 |-------|------|--------|
 | `docker.io/pkudrel/sbx-claude-dotnet10` | `docker/sandbox-templates:claude-code` | .NET SDK 10.0 |
+| `docker.io/pkudrel/sbx-claude-dotnet10-node` | `docker/sandbox-templates:claude-code` | .NET SDK 10.0, Node.js 24.x |
+| `docker.io/pkudrel/sbx-claude-golang-node` | `docker/sandbox-templates:claude-code` | Go 1.24.2, Node.js 24.x |
 
 ## Run a sandbox
 
@@ -18,12 +20,17 @@ Dot-source `shells/sbx-runner.ps1` once in `$PROFILE.CurrentUserAllHosts`:
 . C:\path\to\sbx-templates\shells\sbx-runner.ps1
 ```
 
-Then from any project directory that has `.agents\sbx-runner.yaml`:
+Then from any project directory:
 
 ```powershell
+sbx-runner --init        # create default .agents\sbx-runner.yaml
 sbx-runner               # launch sandbox, auto branch
-sbx-runner -DryRun       # preview command without running
-sbx-runner -Branch feat  # named branch
+sbx-runner --dry-run     # preview command without running
+sbx-runner --branch feat # named branch
+sbx-runner --exec        # open shell in existing sandbox
+sbx-runner --status      # list sandboxes for current project
+sbx-runner --stop        # stop the sandbox
+sbx-runner --help        # show all options
 ```
 
 ### Option B — direct sbx command
@@ -47,9 +54,13 @@ branch: auto
 Requires [Task](https://taskfile.dev). Works on Linux, macOS, and Windows.
 
 ```bash
-task version   # show computed semver
-task build     # build image, load into local Docker daemon
-task push      # build and push to Docker Hub
+task version              # show computed semver (default image)
+task build                # build default image locally
+task push                 # build and push default image
+
+task build:dotnet10       # build sbx-claude-dotnet10
+task build:dotnet10-node  # build sbx-claude-dotnet10-node
+task build:golang-node    # build sbx-claude-golang-node
 ```
 
 Docker Hub secrets required: `DOCKER_USERNAME`, `DOCKER_TOKEN`.
