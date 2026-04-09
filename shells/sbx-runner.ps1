@@ -36,6 +36,31 @@ function sbx-runner {
         [string[]]$ExtraArgs
     )
 
+    # --- Normalize --double-dash arguments ------------------------------------
+    # PowerShell does not map --flag to -Flag for functions; reparse manually.
+    $_reparse = @()
+    if ($Config   -match '^--') { $_reparse += $Config;   $Config   = '' }
+    if ($Template -match '^--') { $_reparse += $Template; $Template = '' }
+    if ($Agent    -match '^--') { $_reparse += $Agent;    $Agent    = '' }
+    if ($Branch   -match '^--') { $_reparse += $Branch;   $Branch   = '' }
+    $_reparse += $ExtraArgs
+    $ExtraArgs = @()
+    for ($_i = 0; $_i -lt $_reparse.Count; $_i++) {
+        switch ($_reparse[$_i].ToLower()) {
+            '--init'     { $Init    = $true }
+            '--exec'     { $Exec    = $true }
+            '--status'   { $Status  = $true }
+            '--stop'     { $Stop    = $true }
+            '--dry-run'  { $DryRun  = $true }
+            '--help'     { $Help    = $true }
+            '--config'   { $_i++; if ($_i -lt $_reparse.Count) { $Config   = $_reparse[$_i] } }
+            '--template' { $_i++; if ($_i -lt $_reparse.Count) { $Template = $_reparse[$_i] } }
+            '--agent'    { $_i++; if ($_i -lt $_reparse.Count) { $Agent    = $_reparse[$_i] } }
+            '--branch'   { $_i++; if ($_i -lt $_reparse.Count) { $Branch   = $_reparse[$_i] } }
+            default      { $ExtraArgs += $_reparse[$_i] }
+        }
+    }
+
     # --- Help ----------------------------------------------------------------
     if ($Help) {
         Write-Host @"
