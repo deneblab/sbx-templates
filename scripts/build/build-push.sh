@@ -1,28 +1,32 @@
 #!/bin/bash
-# build-push.sh — build (and optionally push) sbx-claude-dotnet10 with computed semver.
-# Usage: ./scripts/build/build-push.sh [--no-push] [--dry-run]
-#   --no-push   build and load into local Docker daemon, do not push
-#   --dry-run   print the docker command, do not execute
+# build-push.sh — build (and optionally push) a sandbox image with computed semver.
+# Usage: ./scripts/build/build-push.sh [--image NAME] [--no-push] [--dry-run]
+#   --image NAME  image directory name under src/ (default: sbx-claude-dotnet10)
+#   --no-push     build and load into local Docker daemon, do not push
+#   --dry-run     print the docker command, do not execute
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+IMAGE_NAME="sbx-claude-dotnet10"
 NO_PUSH=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --image)   IMAGE_NAME="$2"; shift 2 ;;
     --no-push) NO_PUSH=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     *) shift ;;
   esac
 done
 
-# Compute version
+CONTEXT="${REPO_ROOT}/src/${IMAGE_NAME}"
+
+# Compute version (global version.yaml at repo root)
 eval "$(bash "${REPO_ROOT}/scripts/build/version.sh")"
 
-IMAGE="docker.io/pkudrel/sbx-claude-dotnet10"
-CONTEXT="${REPO_ROOT}/src/sbx-claude-dotnet10"
+IMAGE="docker.io/pkudrel/${IMAGE_NAME}"
 
 if [ "${NO_PUSH}" = true ]; then
   PUSH_FLAG="--load"

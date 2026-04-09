@@ -1,27 +1,70 @@
 version: '3'
 
+vars:
+  DEFAULT_IMAGE: sbx-claude-dotnet10
+
 tasks:
   default:
     silent: true
     cmds:
       - task --list
 
+  # ── Per-image shortcuts ────────────────────────────────────────────────────
+
   version:
-    desc: Show computed semver for current commit
+    desc: "Show computed semver for default image ({{.DEFAULT_IMAGE}})"
+    cmds:
+      - task: "version:{{.DEFAULT_IMAGE}}"
+
+  build:
+    desc: "Build default image ({{.DEFAULT_IMAGE}}) locally"
+    cmds:
+      - task: "build:{{.DEFAULT_IMAGE}}"
+
+  push:
+    desc: "Build and push default image ({{.DEFAULT_IMAGE}})"
+    cmds:
+      - task: "push:{{.DEFAULT_IMAGE}}"
+
+  # ── dotnet10 ───────────────────────────────────────────────────────────────
+
+  "version:dotnet10":
+    desc: "Show computed semver for sbx-claude-dotnet10"
     cmds:
       - task: "_version:{{OS}}"
 
-  build:
-    desc: "Build Docker image locally (loads into local daemon, no push)"
+  "build:dotnet10":
+    desc: "Build sbx-claude-dotnet10 locally"
     cmds:
       - task: "_build:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
 
-  push:
-    desc: "Build and push Docker image to Docker Hub"
+  "push:dotnet10":
+    desc: "Build and push sbx-claude-dotnet10"
     cmds:
       - task: "_push:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
 
-  # ── Unix (Linux + macOS) ─────────────────────────────────────────────────────
+  # ── dotnet10-node ──────────────────────────────────────────────────────────
+
+  "version:dotnet10-node":
+    desc: "Show computed semver for sbx-claude-dotnet10-node"
+    cmds:
+      - task: "_version:{{OS}}"
+
+  "build:dotnet10-node":
+    desc: "Build sbx-claude-dotnet10-node locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node }
+
+  "push:dotnet10-node":
+    desc: "Build and push sbx-claude-dotnet10-node"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node }
+
+  # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
 
   "_version:linux":
     internal: true
@@ -33,21 +76,21 @@ tasks:
 
   "_build:linux":
     internal: true
-    cmds: [bash scripts/build/build-push.sh --no-push]
+    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push]
 
   "_build:darwin":
     internal: true
-    cmds: [bash scripts/build/build-push.sh --no-push]
+    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push]
 
   "_push:linux":
     internal: true
-    cmds: [bash scripts/build/build-push.sh]
+    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}"]
 
   "_push:darwin":
     internal: true
-    cmds: [bash scripts/build/build-push.sh]
+    cmds: [bash scripts/build/build-push.sh --image "{{.IMAGE}}"]
 
-  # ── Windows (PowerShell) ─────────────────────────────────────────────────────
+  # ── Windows (PowerShell) ─────────────────────────────────────────────────
 
   "_version:windows":
     internal: true
@@ -57,9 +100,9 @@ tasks:
   "_build:windows":
     internal: true
     cmds:
-      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -NoPush
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}" -NoPush
 
   "_push:windows":
     internal: true
     cmds:
-      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}"

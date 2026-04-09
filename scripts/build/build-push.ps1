@@ -1,9 +1,11 @@
-# build-push.ps1 — build (and optionally push) sbx-claude-dotnet10 with computed semver.
-# Usage: .\scripts\build\build-push.ps1 [-NoPush] [-DryRun]
-#   -NoPush   build and load into local Docker daemon, do not push
-#   -DryRun   print the docker command, do not execute
+# build-push.ps1 — build (and optionally push) a sandbox image with computed semver.
+# Usage: .\scripts\build\build-push.ps1 [-ImageName NAME] [-NoPush] [-DryRun]
+#   -ImageName NAME  image directory name under src/ (default: sbx-claude-dotnet10)
+#   -NoPush          build and load into local Docker daemon, do not push
+#   -DryRun          print the docker command, do not execute
 
 param(
+    [string]$ImageName = "sbx-claude-dotnet10",
     [switch]$NoPush,
     [switch]$DryRun
 )
@@ -11,10 +13,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir  = $PSScriptRoot
-$Image      = "docker.io/pkudrel/sbx-claude-dotnet10"
-$Context    = (Resolve-Path (Join-Path $ScriptDir "..\..\src\sbx-claude-dotnet10")).Path
+$RepoRoot   = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
+$Image      = "docker.io/pkudrel/$ImageName"
+$Context    = (Resolve-Path (Join-Path $RepoRoot "src\$ImageName")).Path
 
-# Compute version — version.ps1 outputs key=value lines to stdout
+# Compute version (global version.yaml at repo root)
 $lines = & "$ScriptDir\version.ps1"
 $data  = @{}
 foreach ($line in $lines) {

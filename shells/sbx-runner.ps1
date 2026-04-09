@@ -24,6 +24,7 @@ function sbx-runner {
         [string]$Template = "",
         [string]$Agent    = "",
         [string]$Branch   = "",
+        [switch]$Exec,
         [switch]$DryRun,
         [Parameter(ValueFromRemainingArguments)]
         [string[]]$ExtraArgs
@@ -48,8 +49,18 @@ function sbx-runner {
         if (-not $Branch)   { $Branch   = _ReadYaml $Config "branch" }
     }
 
+    if (-not $Agent) { Write-Error "agent is required (set in $Config or pass -Agent)"; return }
+
+    # -Exec: drop into a shell in the existing sandbox for this agent + project
+    if ($Exec) {
+        $sandboxName = "$Agent-$((Get-Item .).Name)"
+        if ($DryRun) { Write-Host "[dry-run] sbx exec -it $sandboxName bash"; return }
+        Write-Host "Exec into: $sandboxName"
+        & sbx exec -it $sandboxName bash
+        return
+    }
+
     if (-not $Template) { Write-Error "template is required (set in $Config or pass -Template)"; return }
-    if (-not $Agent)    { Write-Error "agent is required (set in $Config or pass -Agent)"; return }
 
     $sbxArgs = @("run", "--template", $Template, $Agent)
     if ($Branch)    { $sbxArgs += @("--branch", $Branch) }
