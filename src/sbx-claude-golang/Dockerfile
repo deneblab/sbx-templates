@@ -13,7 +13,7 @@ RUN apt-get update \
     jq \
     unzip \
     procps \
- && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
     nodejs \
