@@ -1,0 +1,10 @@
+{
+  "issueId": "SBXT-006-AddInitToSbxrunner",
+  "status": "completed",
+  "phase": "done",
+  "files": {
+    "shells/sbx-runner.ps1": "completed"
+  },
+  "createdAt": "2026-04-09T00:00:00Z",
+  "completedAt": "2026-04-09T00:00:00Z"
+}

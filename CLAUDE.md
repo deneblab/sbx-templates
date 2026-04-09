@@ -17,8 +17,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```powershell
 sbx-runner               # reads .agents\sbx-runner.yaml, launches sandbox
-sbx-runner -DryRun       # preview without running
-sbx-runner -Branch feat  # named branch
+sbx-runner --init        # create default .agents\sbx-runner.yaml
+sbx-runner --dry-run     # preview without running
+sbx-runner --branch feat # named branch
 ```
 
 Requires `shells/sbx-runner.ps1` dot-sourced in `$PROFILE.CurrentUserAllHosts`.

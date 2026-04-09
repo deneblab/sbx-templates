@@ -6,8 +6,9 @@
 #
 # Then from any directory that has .agents\sbx-runner.yaml (or sbx-runner.yaml):
 #   sbx-runner
-#   sbx-runner -Branch my-feature
-#   sbx-runner -DryRun
+#   sbx-runner --init
+#   sbx-runner --branch my-feature
+#   sbx-runner --dry-run
 #
 # Config search order:
 #   1. .agents\sbx-runner.yaml  (preferred)
@@ -28,6 +29,7 @@ function sbx-runner {
         [switch]$Exec,
         [switch]$Status,
         [switch]$Stop,
+        [switch]$Init,
         [switch]$DryRun,
         [switch]$Help,
         [Parameter(ValueFromRemainingArguments)]
@@ -40,23 +42,25 @@ function sbx-runner {
 sbx-runner — launch and manage Claude Code sandboxes from sbx-runner.yaml
 
 Usage:
-  sbx-runner                   Run sandbox using config defaults
-  sbx-runner -Branch feat      Override the branch name
-  sbx-runner -Exec             Open a shell in the existing sandbox
-  sbx-runner -Status           List sandboxes for the current project
-  sbx-runner -Stop             Stop the sandbox for the current project
-  sbx-runner -DryRun           Preview the sbx command without running it
-  sbx-runner -Help             Show this help message
+  sbx-runner                    Run sandbox using config defaults
+  sbx-runner --init             Create a default sbx-runner.yaml config
+  sbx-runner --branch feat      Override the branch name
+  sbx-runner --exec             Open a shell in the existing sandbox
+  sbx-runner --status           List sandboxes for the current project
+  sbx-runner --stop             Stop the sandbox for the current project
+  sbx-runner --dry-run          Preview the sbx command without running it
+  sbx-runner --help             Show this help message
 
 Parameters:
-  -Config <path>    Path to YAML config (default: .agents\sbx-runner.yaml or sbx-runner.yaml)
-  -Template <img>   Docker image to use (overrides config)
-  -Agent <name>     Agent name, e.g. claude (overrides config)
-  -Branch <name>    Branch name; set to 'auto' in config to use current git branch
-  -Exec             Exec into an existing sandbox instead of creating one
-  -Status           List sandboxes matching the current project (agent-folder pattern)
-  -Stop             Stop the sandbox for the current project
-  -DryRun           Show what would run without executing
+  --config <path>    Path to YAML config (default: .agents\sbx-runner.yaml or sbx-runner.yaml)
+  --template <img>   Docker image to use (overrides config)
+  --agent <name>     Agent name, e.g. claude (overrides config)
+  --branch <name>    Branch name; set to 'auto' in config to use current git branch
+  --init             Generate a default config file (.agents\sbx-runner.yaml)
+  --exec             Exec into an existing sandbox instead of creating one
+  --status           List sandboxes matching the current project (agent-folder pattern)
+  --stop             Stop the sandbox for the current project
+  --dry-run          Show what would run without executing
 
 Config file (.agents\sbx-runner.yaml):
   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
@@ -92,6 +96,26 @@ Config file (.agents\sbx-runner.yaml):
         }
     }
 
+    # --- Init mode -----------------------------------------------------------
+    if ($Init) {
+        $initPath = if ($Config) { $Config } else { ".agents\sbx-runner.yaml" }
+        if (Test-Path $initPath) {
+            Write-Warning "Config file already exists: $initPath"
+            return
+        }
+        $initDir = Split-Path $initPath -Parent
+        if ($initDir -and -not (Test-Path $initDir)) {
+            New-Item -ItemType Directory -Path $initDir -Force | Out-Null
+        }
+        @"
+template: docker.io/pkudrel/sbx-claude-dotnet10:latest
+agent: claude
+branch: auto
+"@ | Set-Content -Path $initPath -Encoding UTF8
+        Write-Host "Created config: $initPath"
+        return
+    }
+
     # --- Resolve config path -------------------------------------------------
     if (-not $Config) {
         if      (Test-Path ".agents\sbx-runner.yaml") { $Config = ".agents\sbx-runner.yaml" }
@@ -111,7 +135,7 @@ Config file (.agents\sbx-runner.yaml):
 
     if (-not $Agent) {
         $configHint = if ($Config) { $Config } else { ".agents\sbx-runner.yaml (not found)" }
-        Write-Error "agent is required (set in $configHint or pass -Agent). Run 'sbx-runner -Help' for usage."
+        Write-Error "agent is required (set in $configHint or pass --agent). Run 'sbx-runner --init' to create a default config."
         return
     }
 
@@ -146,7 +170,7 @@ Config file (.agents\sbx-runner.yaml):
 
     if (-not $Template) {
         $configHint = if ($Config) { $Config } else { ".agents\sbx-runner.yaml (not found)" }
-        Write-Error "template is required (set in $configHint or pass -Template). Run 'sbx-runner -Help' for usage."
+        Write-Error "template is required (set in $configHint or pass --template). Run 'sbx-runner --init' to create a default config."
         return
     }
 
