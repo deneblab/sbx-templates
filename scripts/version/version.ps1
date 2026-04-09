@@ -9,7 +9,8 @@ param(
     [switch]$VersionOnly,
     [string]$ConfigFile = "version.yaml",
     [string]$Override = "",
-    [string]$TagPrefix = "v"
+    [string]$TagPrefix = "v",
+    [string]$Path = ""
 )
 
 if ($env:INPUT_CONFIG_FILE) { $ConfigFile = $env:INPUT_CONFIG_FILE }
@@ -67,6 +68,11 @@ if ($Override -ne "") {
 }
 
 # 2. Calculate Increment
+$pathArgs = @()
+if ($Path -ne "") {
+    $pathArgs = @("--", $Path)
+}
+
 if ($baseCommitSha -ne "") {
     # Validate SHA exists in repo.
     $objType = InvokeGit cat-file -t $baseCommitSha
@@ -74,9 +80,9 @@ if ($baseCommitSha -ne "") {
         Write-Error "baseCommitSha '$baseCommitSha' not found in git history"
         exit 1
     }
-    $inc = InvokeGit rev-list --count "${baseCommitSha}..HEAD"
+    $inc = InvokeGit rev-list --count "${baseCommitSha}..HEAD" @pathArgs
 } else {
-    $inc = InvokeGit rev-list --count HEAD
+    $inc = InvokeGit rev-list --count HEAD @pathArgs
 }
 if (-not $inc -or $inc -eq "") { $inc = 0 } else { $inc = [int]$inc }
 

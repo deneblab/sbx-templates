@@ -8,6 +8,7 @@
 #
 # If baseCommitSha is set, counts commits after that SHA.
 # If absent, counts all commits.
+# If --path is set, only counts commits touching that path.
 
 # --- Default Values ---
 CONFIG_FILE="${INPUT_CONFIG_FILE:-version.yaml}"
@@ -15,6 +16,7 @@ OVERRIDE="${INPUT_MAJOR_MINOR:-}"
 TAG_PREFIX="${INPUT_TAG_PREFIX:-v}"
 OUTPUT_DEST="${GITHUB_OUTPUT:-/dev/stdout}"
 VERSION_ONLY=false
+COUNT_PATH=""
 
 # --- Argument Parser ---
 while [[ $# -gt 0 ]]; do
@@ -23,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --file)     CONFIG_FILE="$2"; shift 2 ;;
     --override) OVERRIDE="$2"; shift 2 ;;
     --prefix)   TAG_PREFIX="$2"; shift 2 ;;
+    --path)     COUNT_PATH="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -64,15 +67,20 @@ else
 fi
 
 # 2. Calculate Increment
+PATH_ARGS=()
+if [ -n "$COUNT_PATH" ]; then
+    PATH_ARGS=("--" "$COUNT_PATH")
+fi
+
 if [ -n "$BASE_COMMIT_SHA" ]; then
     # Validate SHA exists in repo.
     if ! sh_git cat-file -t "$BASE_COMMIT_SHA" | grep -q "commit"; then
         echo "Error: baseCommitSha '$BASE_COMMIT_SHA' not found in git history" >&2
         exit 1
     fi
-    INC=$(sh_git rev-list --count "${BASE_COMMIT_SHA}..HEAD")
+    INC=$(sh_git rev-list --count "${BASE_COMMIT_SHA}..HEAD" "${PATH_ARGS[@]}")
 else
-    INC=$(sh_git rev-list --count HEAD)
+    INC=$(sh_git rev-list --count HEAD "${PATH_ARGS[@]}")
 fi
 [ -z "$INC" ] && INC=0
 

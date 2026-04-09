@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `sbx-templates` is a Deneblab repository for Claude Code sandbox Docker templates. It contains:
 
 - **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
-- **`scripts/build/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
+- **`scripts/version/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
 - **`shells/sbx-runner.ps1`** — PowerShell function (dot-sourced into profile) that reads `.agents/sbx-runner.yaml` and calls `sbx run`.
 - **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`).
@@ -44,8 +44,8 @@ bash scripts/build/build-push.sh --dry-run    # preview (sh)
 ## Versioning
 
 ```bash
-scripts/build/version.sh --version-only        # e.g. 0.1.5
-pwsh scripts/build/version.ps1 -VersionOnly
+scripts/version/version.sh --version-only        # e.g. 0.1.5
+pwsh scripts/version/version.ps1 -VersionOnly
 ```
 
 `version.yaml` format:

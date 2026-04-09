@@ -23,8 +23,8 @@ done
 
 CONTEXT="${REPO_ROOT}/src/${IMAGE_NAME}"
 
-# Compute version (global version.yaml at repo root)
-eval "$(bash "${REPO_ROOT}/scripts/build/version.sh")"
+# Compute version scoped to this image's directory
+eval "$(bash "${REPO_ROOT}/scripts/version/version.sh" --path "src/${IMAGE_NAME}")"
 
 IMAGE="docker.io/pkudrel/${IMAGE_NAME}"
 

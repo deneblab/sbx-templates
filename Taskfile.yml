@@ -9,6 +9,18 @@ tasks:
     cmds:
       - task --list
 
+  # ── Tests ───────────────────────────────────────────────────────────────────
+
+  test:
+    desc: "Run all tests"
+    cmds:
+      - task: "test:version"
+
+  "test:version":
+    desc: "Run version script tests"
+    cmds:
+      - bash scripts/version/tests/version.sh.test.sh
+
   # ── Per-image shortcuts ────────────────────────────────────────────────────
 
   version:
@@ -32,6 +44,7 @@ tasks:
     desc: "Show computed semver for sbx-claude-dotnet10"
     cmds:
       - task: "_version:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
 
   "build:dotnet10":
     desc: "Build sbx-claude-dotnet10 locally"
@@ -51,6 +64,7 @@ tasks:
     desc: "Show computed semver for sbx-claude-dotnet10-node"
     cmds:
       - task: "_version:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node }
 
   "build:dotnet10-node":
     desc: "Build sbx-claude-dotnet10-node locally"
@@ -68,11 +82,11 @@ tasks:
 
   "_version:linux":
     internal: true
-    cmds: [bash scripts/build/version.sh]
+    cmds: [bash scripts/version/version.sh --path "src/{{.IMAGE}}"]
 
   "_version:darwin":
     internal: true
-    cmds: [bash scripts/build/version.sh]
+    cmds: [bash scripts/version/version.sh --path "src/{{.IMAGE}}"]
 
   "_build:linux":
     internal: true
@@ -95,7 +109,7 @@ tasks:
   "_version:windows":
     internal: true
     cmds:
-      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/version.ps1
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/version/version.ps1 -Path "src/{{.IMAGE}}"
 
   "_build:windows":
     internal: true

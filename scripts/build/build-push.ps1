@@ -17,8 +17,8 @@ $RepoRoot   = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 $Image      = "docker.io/pkudrel/$ImageName"
 $Context    = (Resolve-Path (Join-Path $RepoRoot "src\$ImageName")).Path
 
-# Compute version (global version.yaml at repo root)
-$lines = & "$ScriptDir\version.ps1"
+# Compute version scoped to this image's directory
+$lines = & (Join-Path $RepoRoot "scripts/version/version.ps1") -Path "src/$ImageName"
 $data  = @{}
 foreach ($line in $lines) {
     if ($line -match '^(\w+)=(.+)$') { $data[$Matches[1]] = $Matches[2] }

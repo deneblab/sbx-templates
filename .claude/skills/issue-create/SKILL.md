@@ -107,6 +107,8 @@ tags: []                             # agent‑generated slugs, e.g., [frontend,
 ```md
 # {HUMAN_TITLE}
 
+**User input** (user text above remains untouched. Agent cannot modify this section; it is for user‑agent communication and planning)
+
 {HUMAN_ISSUE_DESCRIPTION}
 
 ## Agent Summary

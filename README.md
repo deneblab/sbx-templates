@@ -67,8 +67,8 @@ baseCommitSha: abc1234   # optional — count commits only after this SHA
 ```
 
 ```bash
-bash scripts/build/version.sh --version-only   # e.g. 0.1.5
-pwsh scripts/build/version.ps1 -VersionOnly
+bash scripts/version/version.sh --version-only   # e.g. 0.1.5
+pwsh scripts/version/version.ps1 -VersionOnly
 ```
 
 ## Merge agent changes
