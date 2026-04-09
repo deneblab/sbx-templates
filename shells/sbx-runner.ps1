@@ -219,17 +219,12 @@ branch: auto
         return
     }
 
-    # Capture all output (stdout + stderr) to detect "already exists"
-    $all = & sbx @sbxArgs 2>&1
-    $allText = $all -join "`n"
-    $all | ForEach-Object {
-        if ($_ -is [System.Management.Automation.ErrorRecord]) { Write-Error $_.Exception.Message }
-        else { Write-Output $_ }
-    }
-
-    if ($LASTEXITCODE -ne 0 -and $allText -match "sandbox '([^']+)' already exists") {
-        $existingName = $Matches[1]
-        Write-Host "Resuming existing sandbox: $existingName"
-        & sbx run $existingName
+    # Check if sandbox already exists; if so, resume it directly
+    $existing = & sbx list 2>&1 | Where-Object { $_ -match [regex]::Escape($sandboxName) }
+    if ($existing) {
+        Write-Host "Resuming existing sandbox: $sandboxName"
+        & sbx run $sandboxName
+    } else {
+        & sbx @sbxArgs
     }
 }
