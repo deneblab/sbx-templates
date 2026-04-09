@@ -43,7 +43,7 @@ function sbx-runner {
     if ($Template -match '^--') { $_reparse += $Template; $Template = '' }
     if ($Agent    -match '^--') { $_reparse += $Agent;    $Agent    = '' }
     if ($Branch   -match '^--') { $_reparse += $Branch;   $Branch   = '' }
-    $_reparse += $ExtraArgs
+    if ($ExtraArgs) { $_reparse += $ExtraArgs }
     $ExtraArgs = @()
     for ($_i = 0; $_i -lt $_reparse.Count; $_i++) {
         switch ($_reparse[$_i].ToLower()) {
