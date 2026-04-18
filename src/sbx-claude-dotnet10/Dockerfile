@@ -1,4 +1,5 @@
-FROM docker/sandbox-templates:claude-code
+# Stage 1: deps — install runtimes; rebuilt only when dependencies change
+FROM docker/sandbox-templates:claude-code AS deps
 
 USER root
 
@@ -33,6 +34,13 @@ ENV DOTNET_NOLOGO=1
 ENV NUGET_PACKAGES=/workspace/.sbx-cache/nuget/packages
 
 RUN dotnet --info
+
+# Stage 2: claude — install/update Claude Code; rebuild this stage alone to update
+FROM deps AS claude
+
+USER root
+RUN curl -fsSL https://claude.ai/install.sh | bash
+USER agent
 
 ARG VERSION=dev
 ARG SHORT_SHA=unknown

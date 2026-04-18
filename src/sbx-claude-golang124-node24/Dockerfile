@@ -1,4 +1,5 @@
-FROM docker/sandbox-templates:claude-code
+# Stage 1: deps — install runtimes; rebuilt only when dependencies change
+FROM docker/sandbox-templates:claude-code AS deps
 
 USER root
 
@@ -38,6 +39,13 @@ ENV GOBIN=/workspace/.sbx-cache/go/bin
 ENV npm_config_cache=/workspace/.sbx-cache/npm
 
 RUN go version && node --version && npm --version
+
+# Stage 2: claude — install/update Claude Code; rebuild this stage alone to update
+FROM deps AS claude
+
+USER root
+RUN curl -fsSL https://claude.ai/install.sh | bash
+USER agent
 
 ARG VERSION=dev
 ARG SHORT_SHA=unknown

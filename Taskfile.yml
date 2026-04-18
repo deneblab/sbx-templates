@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  DEFAULT_IMAGE: sbx-claude-dotnet10
+  DEFAULT_IMAGE: dotnet10
 
 tasks:
   default:
@@ -38,6 +38,11 @@ tasks:
     cmds:
       - task: "push:{{.DEFAULT_IMAGE}}"
 
+  update-claude:
+    desc: "Update Claude Code in default image ({{.DEFAULT_IMAGE}}) without rebuilding deps"
+    cmds:
+      - task: "update-claude:{{.DEFAULT_IMAGE}}"
+
   # ── dotnet10 ───────────────────────────────────────────────────────────────
 
   "version:dotnet10":
@@ -56,6 +61,12 @@ tasks:
     desc: "Build and push sbx-claude-dotnet10"
     cmds:
       - task: "_push:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
+
+  "update-claude:dotnet10":
+    desc: "Update Claude Code in sbx-claude-dotnet10 without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
         vars: { IMAGE: sbx-claude-dotnet10 }
 
   # ── dotnet10-node24 ────────────────────────────────────────────────────────
@@ -78,6 +89,12 @@ tasks:
       - task: "_push:{{OS}}"
         vars: { IMAGE: sbx-claude-dotnet10-node24 }
 
+  "update-claude:dotnet10-node24":
+    desc: "Update Claude Code in sbx-claude-dotnet10-node24 without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+
   # ── golang124-node24 ──────────────────────────────────────────────────────
 
   "version:golang124-node24":
@@ -98,6 +115,13 @@ tasks:
     desc: "Build and push sbx-claude-golang124-node24"
     cmds:
       - task: "_push:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang124-node24
+
+  "update-claude:golang124-node24":
+    desc: "Update Claude Code in sbx-claude-golang124-node24 without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
         vars:
           IMAGE: sbx-claude-golang124-node24
 
@@ -133,6 +157,16 @@ tasks:
     cmds:
       - bash scripts/build/build-push.sh --image "{{.IMAGE}}"
 
+  "_update-claude:linux":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push --update-claude
+
+  "_update-claude:darwin":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push --update-claude
+
   # ── Windows (PowerShell) ─────────────────────────────────────────────────
 
   "_version:windows":
@@ -149,3 +183,8 @@ tasks:
     internal: true
     cmds:
       - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}"
+
+  "_update-claude:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}" -NoPush -UpdateClaude

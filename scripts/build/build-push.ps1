@@ -1,13 +1,15 @@
 # build-push.ps1 — build (and optionally push) a sandbox image with computed semver.
-# Usage: .\scripts\build\build-push.ps1 [-ImageName NAME] [-NoPush] [-DryRun]
+# Usage: .\scripts\build\build-push.ps1 [-ImageName NAME] [-NoPush] [-DryRun] [-UpdateClaude]
 #   -ImageName NAME  image directory name under src/ (default: sbx-claude-dotnet10)
 #   -NoPush          build and load into local Docker daemon, do not push
 #   -DryRun          print the docker command, do not execute
+#   -UpdateClaude    skip cache for the 'claude' stage only (fast Claude Code update)
 
 param(
     [string]$ImageName = "sbx-claude-dotnet10",
     [switch]$NoPush,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$UpdateClaude
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,17 +31,20 @@ $tag       = $data['tag']
 $shortSha  = $data['short_sha']
 $buildDate = $data['build_date_utc']
 
-$pushFlag = if ($NoPush) { "--load" } else { "--push" }
+$pushFlag     = if ($NoPush) { "--load" } else { "--push" }
+$noCacheArgs  = if ($UpdateClaude) { @("--no-cache-filter", "claude") } else { @() }
 
-Write-Host "Version : $version"
-Write-Host "Tag     : $tag"
-Write-Host "SHA     : $shortSha"
-Write-Host "Image   : ${Image}:${tag}"
+Write-Host "Version       : $version"
+Write-Host "Tag           : $tag"
+Write-Host "SHA           : $shortSha"
+Write-Host "Image         : ${Image}:${tag}"
+Write-Host "Update claude : $UpdateClaude"
 Write-Host ""
 
 if ($DryRun) {
+    $noCacheStr = if ($UpdateClaude) { "--no-cache-filter claude " } else { "" }
     Write-Host "[dry-run] would run:"
-    Write-Host "  docker buildx build $pushFlag ``"
+    Write-Host "  docker buildx build $pushFlag ${noCacheStr}``"
     Write-Host "    -t ${Image}:${tag} ``"
     Write-Host "    -t ${Image}:latest ``"
     Write-Host "    --build-arg VERSION=$version ``"
@@ -49,7 +54,7 @@ if ($DryRun) {
     exit 0
 }
 
-& docker buildx build $pushFlag `
+& docker buildx build $pushFlag @noCacheArgs `
     -t "${Image}:${tag}" `
     -t "${Image}:latest" `
     --build-arg "VERSION=$version" `

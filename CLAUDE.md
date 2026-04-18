@@ -59,6 +59,45 @@ bash scripts/build/build-push.sh --dry-run    # preview (sh)
 .\scripts\build\build-push.ps1 -DryRun        # preview (PowerShell)
 ```
 
+## Updating Claude Code Without Rebuilding the Whole Image
+
+Each Dockerfile uses a two-stage build:
+- **`deps` stage** — installs runtimes (.NET, Go, Node). Cached; only rebuilt when dependencies change.
+- **`claude` stage** — installs Claude Code via the official install script. Rebuilt independently to update Claude Code.
+
+### Step 1 — Build the local image (first time or after dep changes)
+
+```bash
+task build:dotnet10          # full build, loads as docker.io/pkudrel/sbx-claude-dotnet10:latest
+```
+
+### Step 2 — Update Claude Code only (fast, skips dep layers)
+
+```bash
+task update-claude:dotnet10          # dotnet10
+task update-claude:dotnet10-node24   # dotnet10 + Node 24
+task update-claude:golang124-node24  # Go + Node 24
+task update-claude                   # default image (dotnet10)
+```
+
+This runs `docker build --no-cache-filter claude ...`, re-running only the `claude` stage while keeping all other layers cached. The result is loaded into the local Docker daemon — no push required.
+
+Direct script usage:
+```bash
+bash scripts/build/build-push.sh --image sbx-claude-dotnet10 --no-push --update-claude
+.\scripts\build\build-push.ps1 -ImageName sbx-claude-dotnet10 -NoPush -UpdateClaude
+```
+
+### Step 3 — Point sbx-runner.yaml at the local image
+
+```yaml
+template: docker.io/pkudrel/sbx-claude-dotnet10:latest
+agent: claude
+branch: auto
+```
+
+The image tag is the same whether built locally or pushed — `sbx-runner` picks it up from the local daemon automatically.
+
 ## Versioning
 
 ```bash

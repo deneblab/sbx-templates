@@ -72,6 +72,35 @@ Docker Hub secrets required: `DOCKER_USERNAME`, `DOCKER_TOKEN`.
 
 GitHub Actions workflow (`.github/workflows/build-push.yml`) triggers on push to `main`.
 
+## Updating Claude Code locally
+
+Each Dockerfile has two stages: `deps` (runtimes) and `claude` (Claude Code install). This lets you update Claude Code without rebuilding the slow dependency layers.
+
+**First build** (full, loads into local Docker daemon):
+
+```bash
+task build:dotnet10
+```
+
+**Update Claude Code only** (skips `deps` layer cache, takes seconds):
+
+```bash
+task update-claude:dotnet10          # .NET 10
+task update-claude:dotnet10-node24   # .NET 10 + Node 24
+task update-claude:golang124-node24  # Go + Node 24
+task update-claude                   # default image
+```
+
+**Use the locally built image** — set `template` in `.agents\sbx-runner.yaml` to the local tag:
+
+```yaml
+template: docker.io/pkudrel/sbx-claude-dotnet10:latest
+agent: claude
+branch: auto
+```
+
+The image is served from the local Docker daemon — no registry push needed.
+
 ## Versioning
 
 Version is computed from `version.yaml` + git commit count:
