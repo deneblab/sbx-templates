@@ -32,6 +32,7 @@ USER agent
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
 ENV NUGET_PACKAGES=/workspace/.sbx-cache/nuget/packages
+ENV SBX_SANDBOX=true
 
 RUN dotnet --info
 

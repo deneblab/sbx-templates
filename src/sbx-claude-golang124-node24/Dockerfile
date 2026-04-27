@@ -37,6 +37,7 @@ ENV GOPATH=/workspace/.sbx-cache/go
 ENV GOMODCACHE=/workspace/.sbx-cache/go/pkg/mod
 ENV GOBIN=/workspace/.sbx-cache/go/bin
 ENV npm_config_cache=/workspace/.sbx-cache/npm
+ENV SBX_SANDBOX=true
 
 RUN go version && node --version && npm --version
 
