@@ -237,7 +237,7 @@ branch: auto
     $existing = & sbx list 2>&1 | Where-Object { $_ -match [regex]::Escape($sandboxName) }
     if ($existing) {
         Write-Host "Resuming existing sandbox: $sandboxName"
-        & sbx run $sandboxName
+        & sbx run --name $sandboxName
     } else {
         & sbx @sbxArgs
     }

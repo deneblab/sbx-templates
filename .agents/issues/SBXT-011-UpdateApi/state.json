@@ -1,0 +1,23 @@
+{
+  "issueId": "SBXT-011-UpdateApi",
+  "status": "completed",
+  "createdAt": "2026-06-24T09:06:34Z",
+  "updatedAt": "2026-06-24",
+  "plan": ".agents/issues/SBXT-011-UpdateApi/plan.md",
+  "filesModified": [
+    {
+      "path": "shells/sbx-runner.ps1",
+      "change": "Resume path: `sbx run $sandboxName` -> `sbx run --name $sandboxName` (line ~240)",
+      "status": "done"
+    }
+  ],
+  "filesCreated": [],
+  "verification": {
+    "method": "inspection",
+    "note": "sbx CLI not available inside the Linux sandbox; resume on Windows host should no longer emit the deprecation warning."
+  },
+  "progress": {
+    "total": 1,
+    "completed": 1
+  }
+}
