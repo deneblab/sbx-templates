@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 sbx-runner               # reads .agents\sbx-runner.yaml, launches sandbox
 sbx-runner --init        # create default .agents\sbx-runner.yaml
 sbx-runner --dry-run     # preview without running
-sbx-runner --branch feat # named branch
+sbx-runner --clone       # run on a private in-container git clone
 ```
 
 Requires `shells/sbx-runner.ps1` dot-sourced in `$PROFILE.CurrentUserAllHosts`.
@@ -31,9 +31,11 @@ Requires `shells/sbx-runner.ps1` dot-sourced in `$PROFILE.CurrentUserAllHosts`.
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
-branch: auto
+clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
 ```
+
+When `clone: true` (or `--clone`), `sbx-runner` passes `--clone` to `sbx run` so the agent works on a private in-container git clone of the host repo. Default is off; `--no-clone` forces it off. The removed `branch` key now warns with a hint to rename it to `clone`.
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace. If not set, no cache mounting occurs.
 
@@ -93,7 +95,7 @@ bash scripts/build/build-push.sh --image sbx-claude-dotnet10 --no-push --update-
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
-branch: auto
+clone: false
 ```
 
 The image tag is the same whether built locally or pushed — `sbx-runner` picks it up from the local daemon automatically.

@@ -17,20 +17,21 @@ Place a `sbx-runner.yaml` in your project at `.agents/sbx-runner.yaml` (preferre
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
-branch: auto    # resolves to current git branch
+clone: false    # true => run on a private in-container git clone
 ```
 
 | Key        | Required | Description                                                        |
 |------------|----------|--------------------------------------------------------------------|
 | `template` | yes      | Docker image for the sandbox                                       |
 | `agent`    | yes      | Agent name passed to `sbx run` (e.g. `claude`)                    |
-| `branch`   | no       | Branch name, or `auto` to detect from `git rev-parse --abbrev-ref HEAD` |
+| `clone`    | no       | `true` passes `--clone` to `sbx run` (private in-container git clone); default `false` |
 
 ## Usage
 
 ```powershell
 sbx-runner                     # Run sandbox using config defaults
-sbx-runner -Branch feat        # Override the branch name
+sbx-runner --clone             # Run on a private in-container git clone
+sbx-runner --no-clone          # Force clone mode off
 sbx-runner -Exec               # Open a shell in the existing sandbox
 sbx-runner -Status             # List sandboxes for the current project
 sbx-runner -Stop               # Stop the sandbox for the current project
@@ -45,7 +46,8 @@ sbx-runner -Help               # Show built-in help
 | `-Config`      | string | Path to YAML config (default: `.agents\sbx-runner.yaml` or `sbx-runner.yaml`) |
 | `-Template`    | string | Docker image (overrides config)                                        |
 | `-Agent`       | string | Agent name (overrides config)                                          |
-| `-Branch`      | string | Branch name (overrides config); `auto` in config resolves to current git branch |
+| `--clone`      | switch | Pass `--clone` to `sbx run` (private in-container git clone); overrides config |
+| `--no-clone`   | switch | Force clone mode off, even if enabled in config                        |
 | `-Exec`        | switch | Exec into an existing sandbox instead of creating one                  |
 | `-Status`      | switch | List sandboxes matching the current project folder                     |
 | `-Stop`        | switch | Stop the sandbox for the current project                               |
@@ -56,7 +58,7 @@ Extra arguments after the named parameters are passed through to `sbx run`.
 
 ## Behavior
 
-- **Config lookup**: searches `.agents\sbx-runner.yaml` first, then `sbx-runner.yaml` in the current directory. Unknown YAML keys trigger a warning.
-- **Auto-branch**: when `branch: auto` is set, the current git branch is detected automatically.
+- **Config lookup**: searches `.agents\sbx-runner.yaml` first, then `sbx-runner.yaml` in the current directory. Unknown YAML keys trigger a warning; the removed `branch` key warns with a hint to rename it to `clone`.
+- **Clone mode**: when `clone: true` (or `--clone`) is set, `--clone` is passed to `sbx run` so the agent works on a private in-container git clone of the host repo. Default is off; `--no-clone` forces it off regardless of config.
 - **Auto-resume**: if `sbx run` reports that a sandbox already exists, the existing sandbox is resumed automatically.
 - **Sandbox naming**: the sandbox name follows the pattern `{agent}-{folder}` (e.g. `claude-my-project`), derived from the agent name and current directory.

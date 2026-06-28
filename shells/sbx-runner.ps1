@@ -7,7 +7,7 @@
 # Then from any directory that has .agents\sbx-runner.yaml (or sbx-runner.yaml):
 #   sbx-runner
 #   sbx-runner --init
-#   sbx-runner --branch my-feature
+#   sbx-runner --clone
 #   sbx-runner --dry-run
 #
 # Config search order:
@@ -17,7 +17,7 @@
 # sbx-runner.yaml format:
 #   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 #   agent: claude
-#   branch: auto
+#   clone: false        # optional: true => run on a private in-container git clone
 #   cache: .sbx-cache   # optional
 
 function sbx-runner {
@@ -26,7 +26,8 @@ function sbx-runner {
         [string]$Config   = "",
         [string]$Template = "",
         [string]$Agent    = "",
-        [string]$Branch   = "",
+        [switch]$Clone,
+        [switch]$NoClone,
         [switch]$Exec,
         [switch]$Status,
         [switch]$Stop,
@@ -43,12 +44,13 @@ function sbx-runner {
     if ($Config   -match '^--') { $_reparse += $Config;   $Config   = '' }
     if ($Template -match '^--') { $_reparse += $Template; $Template = '' }
     if ($Agent    -match '^--') { $_reparse += $Agent;    $Agent    = '' }
-    if ($Branch   -match '^--') { $_reparse += $Branch;   $Branch   = '' }
     if ($ExtraArgs) { $_reparse += $ExtraArgs }
     $ExtraArgs = @()
     for ($_i = 0; $_i -lt $_reparse.Count; $_i++) {
         switch ($_reparse[$_i].ToLower()) {
             '--init'     { $Init    = $true }
+            '--clone'    { $Clone   = $true }
+            '--no-clone' { $NoClone = $true }
             '--exec'     { $Exec    = $true }
             '--status'   { $Status  = $true }
             '--stop'     { $Stop    = $true }
@@ -57,7 +59,6 @@ function sbx-runner {
             '--config'   { $_i++; if ($_i -lt $_reparse.Count) { $Config   = $_reparse[$_i] } }
             '--template' { $_i++; if ($_i -lt $_reparse.Count) { $Template = $_reparse[$_i] } }
             '--agent'    { $_i++; if ($_i -lt $_reparse.Count) { $Agent    = $_reparse[$_i] } }
-            '--branch'   { $_i++; if ($_i -lt $_reparse.Count) { $Branch   = $_reparse[$_i] } }
             default      { $ExtraArgs += $_reparse[$_i] }
         }
     }
@@ -70,7 +71,8 @@ sbx-runner — launch and manage Claude Code sandboxes from sbx-runner.yaml
 Usage:
   sbx-runner                    Run sandbox using config defaults
   sbx-runner --init             Create a default sbx-runner.yaml config
-  sbx-runner --branch feat      Override the branch name
+  sbx-runner --clone            Run on a private in-container git clone (overrides config)
+  sbx-runner --no-clone         Disable clone mode (overrides config)
   sbx-runner --exec             Open a shell in the existing sandbox
   sbx-runner --status           List sandboxes for the current project
   sbx-runner --stop             Stop the sandbox for the current project
@@ -81,7 +83,8 @@ Parameters:
   --config <path>    Path to YAML config (default: .agents\sbx-runner.yaml or sbx-runner.yaml)
   --template <img>   Docker image to use (overrides config)
   --agent <name>     Agent name, e.g. claude (overrides config)
-  --branch <name>    Branch name; set to 'auto' in config to use current git branch
+  --clone            Pass --clone to 'sbx run' (private in-container git clone)
+  --no-clone         Force clone mode off, even if enabled in config
   --init             Generate a default config file (.agents\sbx-runner.yaml)
   --exec             Exec into an existing sandbox instead of creating one
   --status           List sandboxes matching the current project (agent-folder pattern)
@@ -91,7 +94,7 @@ Parameters:
 Config file (.agents\sbx-runner.yaml):
   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
   agent: claude
-  branch: auto        # resolves to current git branch
+  clone: false        # optional: true => run on a private in-container git clone
   cache: .sbx-cache   # optional: mount local cache dir into sandbox
 "@
         return
@@ -104,23 +107,21 @@ Config file (.agents\sbx-runner.yaml):
         ($line -replace "^\s*${Key}\s*:\s*", "") -replace '#.*', '' | ForEach-Object { $_.Trim() }
     }
 
-    function _ResolveGitBranch() {
-        try {
-            $ref = git rev-parse --abbrev-ref HEAD 2>$null
-            if ($LASTEXITCODE -eq 0 -and $ref) { return $ref.Trim() }
-        } catch {}
-        return ""
-    }
-
     function _ValidateConfig([string]$File) {
-        $knownKeys = @("template", "agent", "branch", "cache")
+        $knownKeys = @("template", "agent", "clone", "cache")
         $lines = Get-Content $File | Where-Object { $_ -match "^\s*\S+\s*:" -and $_ -notmatch "^\s*#" }
         foreach ($line in $lines) {
             $key = ($line -replace "\s*:.*", "").Trim()
-            if ($key -notin $knownKeys) {
+            if ($key -eq "branch") {
+                Write-Warning "Key 'branch' in $File is no longer supported ('sbx run' dropped --branch). Rename it to 'clone: true|false'."
+            } elseif ($key -notin $knownKeys) {
                 Write-Warning "Unknown key '$key' in $File (expected: $($knownKeys -join ', '))"
             }
         }
+    }
+
+    function _IsTruthy([string]$Value) {
+        return ($Value.Trim().ToLower() -in @("true", "1", "yes", "on"))
     }
 
     # --- Init mode -----------------------------------------------------------
@@ -137,7 +138,7 @@ Config file (.agents\sbx-runner.yaml):
         @"
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
-branch: auto
+clone: false
 "@ | Set-Content -Path $initPath -Encoding UTF8
         Write-Host "Created config: $initPath"
         return
@@ -149,12 +150,13 @@ branch: auto
         elseif  (Test-Path "sbx-runner.yaml")         { $Config = "sbx-runner.yaml" }
     }
 
+    $CloneConfig = ""
     if ($Config -and (Test-Path $Config)) {
         Write-Host "Config: $Config"
         _ValidateConfig $Config
         if (-not $Template) { $Template = _ReadYaml $Config "template" }
         if (-not $Agent)    { $Agent    = _ReadYaml $Config "agent" }
-        if (-not $Branch)   { $Branch   = _ReadYaml $Config "branch" }
+        $CloneConfig = _ReadYaml $Config "clone"
         $Cache = _ReadYaml $Config "cache"
     } elseif ($Config) {
         Write-Error "Config file not found: $Config"
@@ -202,15 +204,12 @@ branch: auto
         return
     }
 
-    # --- Resolve branch: auto ------------------------------------------------
-    if ($Branch -eq "auto") {
-        $Branch = _ResolveGitBranch
-        if (-not $Branch) {
-            Write-Error "branch is set to 'auto' but could not detect the current git branch. Are you in a git repository?"
-            return
-        }
-        Write-Host "Branch (auto-detected): $Branch"
-    }
+    # --- Resolve clone mode --------------------------------------------------
+    # Precedence: --no-clone > --clone > config 'clone' key (default: off).
+    if ($NoClone)    { $CloneEnabled = $false }
+    elseif ($Clone)  { $CloneEnabled = $true }
+    else             { $CloneEnabled = (_IsTruthy $CloneConfig) }
+    if ($CloneEnabled) { Write-Host "Clone mode: on (--clone)" }
 
     # --- Resolve cache path --------------------------------------------------
     if ($Cache) {
@@ -224,9 +223,9 @@ branch: auto
 
     # --- Build and run -------------------------------------------------------
     $sbxArgs = @("run", "--template", $Template, $Agent)
-    if ($Branch)    { $sbxArgs += @("--branch", $Branch) }
-    if ($Cache)     { $sbxArgs += @(".", $cachePath) }
-    if ($ExtraArgs) { $sbxArgs += $ExtraArgs }
+    if ($CloneEnabled) { $sbxArgs += "--clone" }
+    if ($Cache)        { $sbxArgs += @(".", $cachePath) }
+    if ($ExtraArgs)    { $sbxArgs += $ExtraArgs }
 
     if ($DryRun) {
         Write-Host "[dry-run] sbx $($sbxArgs -join ' ')"

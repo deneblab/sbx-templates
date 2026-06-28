@@ -26,9 +26,9 @@ Then from any project directory:
 
 ```powershell
 sbx-runner --init        # create default .agents\sbx-runner.yaml
-sbx-runner               # launch sandbox, auto branch
+sbx-runner               # launch sandbox
 sbx-runner --dry-run     # preview command without running
-sbx-runner --branch feat # named branch
+sbx-runner --clone       # run on a private in-container git clone
 sbx-runner --exec        # open shell in existing sandbox
 sbx-runner --status      # list sandboxes for current project
 sbx-runner --stop        # stop the sandbox
@@ -38,7 +38,7 @@ sbx-runner --help        # show all options
 ### Option B — direct sbx command
 
 ```bash
-sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude --branch auto
+sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude --clone
 ```
 
 ### sbx-runner.yaml
@@ -48,7 +48,7 @@ Place in `.agents\sbx-runner.yaml` of any project:
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
-branch: auto
+clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
 ```
 
@@ -96,7 +96,7 @@ task update-claude                   # default image
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
-branch: auto
+clone: false
 ```
 
 The image is served from the local Docker daemon — no registry push needed.
