@@ -1,0 +1,26 @@
+{
+  "issueId": "SBXT-013-NewTemplateUvPython",
+  "status": "completed",
+  "createdFiles": [
+    "src/sbx-claude-python-uv/Dockerfile"
+  ],
+  "editedFiles": [
+    "Taskfile.yml",
+    "README.md",
+    "CLAUDE.md"
+  ],
+  "components": [
+    { "id": 1, "path": "src/sbx-claude-python-uv/Dockerfile", "action": "create", "done": true },
+    { "id": 2, "path": "Taskfile.yml", "action": "edit", "done": true },
+    { "id": 3, "path": "README.md", "action": "edit", "done": true },
+    { "id": 4, "path": "CLAUDE.md", "action": "edit", "done": true }
+  ],
+  "lastComponent": 4,
+  "nextComponent": null,
+  "verification": {
+    "versionScript": "0.1.0 (ok)",
+    "taskWiring": "version/build/push/update-claude:python-uv all resolve",
+    "buildDryRun": "context src/sbx-claude-python-uv, tags v0.1.0 + latest (ok)",
+    "dockerBuild": "not run (no push requested)"
+  }
+}

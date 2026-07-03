@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
 - **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-golang124-node24/Dockerfile`** — Go 1.24.2 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
+- **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
 - **`scripts/version/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
 - **`shells/sbx-runner.ps1`** — PowerShell function (dot-sourced into profile) that reads `.agents/sbx-runner.yaml` and calls `sbx run`.
@@ -51,6 +52,7 @@ task push                 # build and push default image
 task build:dotnet10       # build sbx-claude-dotnet10
 task build:dotnet10-node24  # build sbx-claude-dotnet10-node24
 task build:golang124-node24    # build sbx-claude-golang124-node24
+task build:python-uv           # build sbx-claude-python-uv
 ```
 
 Direct script usage:
@@ -79,6 +81,7 @@ task build:dotnet10          # full build, loads as docker.io/pkudrel/sbx-claude
 task update-claude:dotnet10          # dotnet10
 task update-claude:dotnet10-node24   # dotnet10 + Node 24
 task update-claude:golang124-node24  # Go + Node 24
+task update-claude:python-uv         # Python + uv
 task update-claude                   # default image (dotnet10)
 ```
 

@@ -9,6 +9,7 @@ Deneblab sandbox templates for Claude Code development environments.
 | [`pkudrel/sbx-claude-dotnet10`](https://hub.docker.com/r/pkudrel/sbx-claude-dotnet10) | .NET SDK 10.0 |
 | [`pkudrel/sbx-claude-dotnet10-node24`](https://hub.docker.com/r/pkudrel/sbx-claude-dotnet10-node24) | .NET SDK 10.0, Node.js 24.x |
 | [`pkudrel/sbx-claude-golang124-node24`](https://hub.docker.com/r/pkudrel/sbx-claude-golang124-node24) | Go 1.24.2, Node.js 24.x |
+| [`pkudrel/sbx-claude-python-uv`](https://hub.docker.com/r/pkudrel/sbx-claude-python-uv) | Latest Python via [uv](https://docs.astral.sh/uv/) |
 
 All images extend `docker/sandbox-templates:claude-code`.
 
@@ -66,6 +67,7 @@ task push                 # build and push default image
 task build:dotnet10       # build sbx-claude-dotnet10
 task build:dotnet10-node24  # build sbx-claude-dotnet10-node24
 task build:golang124-node24    # build sbx-claude-golang124-node24
+task build:python-uv           # build sbx-claude-python-uv
 ```
 
 Docker Hub secrets required: `DOCKER_USERNAME`, `DOCKER_TOKEN`.
@@ -88,6 +90,7 @@ task build:dotnet10
 task update-claude:dotnet10          # .NET 10
 task update-claude:dotnet10-node24   # .NET 10 + Node 24
 task update-claude:golang124-node24  # Go + Node 24
+task update-claude:python-uv         # Python + uv
 task update-claude                   # default image
 ```
 

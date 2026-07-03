@@ -125,6 +125,36 @@ tasks:
         vars:
           IMAGE: sbx-claude-golang124-node24
 
+  # ── python-uv ─────────────────────────────────────────────────────────────
+
+  "version:python-uv":
+    desc: "Show computed semver for sbx-claude-python-uv"
+    cmds:
+      - task: "_version:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  "build:python-uv":
+    desc: "Build sbx-claude-python-uv locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  "push:python-uv":
+    desc: "Build and push sbx-claude-python-uv"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  "update-claude:python-uv":
+    desc: "Update Claude Code in sbx-claude-python-uv without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
   # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
 
   "_version:linux":
