@@ -124,6 +124,14 @@ Config file (.agents\sbx-runner.yaml):
         return ($Value.Trim().ToLower() -in @("true", "1", "yes", "on"))
     }
 
+    function _NormalizeName([string]$Name) {
+        # Mirror how 'sbx' derives a sandbox name from a folder: lowercase,
+        # collapse any run of non-alphanumeric chars to a single hyphen, trim.
+        # e.g. "APP_Schedule" -> "app-schedule".
+        $n = $Name.ToLower() -replace '[^a-z0-9]+', '-'
+        return $n.Trim('-')
+    }
+
     # --- Init mode -----------------------------------------------------------
     if ($Init) {
         $initPath = if ($Config) { $Config } else { ".agents\sbx-runner.yaml" }
@@ -170,13 +178,17 @@ clone: false
     }
 
     # --- Sandbox name --------------------------------------------------------
+    # 'sbx' normalizes the folder into the sandbox name (lowercase, non-alnum
+    # runs -> '-'), so normalize here too or the "already exists" resume check
+    # below misses (e.g. folder "APP_Schedule" -> sandbox "claude-app-schedule").
     $folderName = (Get-Item .).Name
-    $sandboxName = "$Agent-$folderName"
+    $projectSlug = _NormalizeName $folderName
+    $sandboxName = "$(_NormalizeName $Agent)-$projectSlug"
 
     # --- Status mode ---------------------------------------------------------
     if ($Status) {
-        Write-Host "Sandboxes matching '$folderName':"
-        $list = & sbx list 2>&1 | Where-Object { $_ -match [regex]::Escape($folderName) }
+        Write-Host "Sandboxes matching '$projectSlug':"
+        $list = & sbx list 2>&1 | Where-Object { $_ -match [regex]::Escape($projectSlug) }
         if ($list) { $list | ForEach-Object { Write-Host "  $_" } }
         else       { Write-Host "  (none found)" }
         return
