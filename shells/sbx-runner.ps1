@@ -124,12 +124,28 @@ Config file (.agents\sbx-runner.yaml):
         return ($Value.Trim().ToLower() -in @("true", "1", "yes", "on"))
     }
 
-    function _NormalizeName([string]$Name) {
-        # Mirror how 'sbx' derives a sandbox name from a folder: lowercase,
-        # collapse any run of non-alphanumeric chars to a single hyphen, trim.
-        # e.g. "APP_Schedule" -> "app-schedule".
-        $n = $Name.ToLower() -replace '[^a-z0-9]+', '-'
-        return $n.Trim('-')
+    function _FoldName([string]$Name) {
+        # Comparison key ONLY — never pass this to 'sbx'. Lowercases and drops
+        # every non-alphanumeric char so a name compares equal whatever casing
+        # and separators 'sbx' picked: "claude-APP_Schedule", "claude-app-schedule"
+        # and "claude-AppSchedule" all fold to "claudeappschedule".
+        return ($Name.ToLower() -replace '[^a-z0-9]', '')
+    }
+
+    function _ResolveSandboxName([string]$Candidate) {
+        # 'sbx' derives the sandbox name from the folder itself and its exact
+        # rule is undocumented — it does preserve case (folder "AbcVersion" ->
+        # sandbox "claude-AbcVersion"), so mirroring it here is guesswork that
+        # produces names 'sbx run --name' / 'sbx stop' cannot resolve. Ask
+        # 'sbx list' instead and return the name exactly as it reports it.
+        # Returns $null when no sandbox matches.
+        $key = _FoldName $Candidate
+        foreach ($line in (& sbx list 2>&1)) {
+            foreach ($token in ("$line" -split '\s+')) {
+                if ($token -and (_FoldName $token) -eq $key) { return $token }
+            }
+        }
+        return $null
     }
 
     # --- Init mode -----------------------------------------------------------
@@ -178,17 +194,18 @@ clone: false
     }
 
     # --- Sandbox name --------------------------------------------------------
-    # 'sbx' normalizes the folder into the sandbox name (lowercase, non-alnum
-    # runs -> '-'), so normalize here too or the "already exists" resume check
-    # below misses (e.g. folder "APP_Schedule" -> sandbox "claude-app-schedule").
+    # The candidate is what 'sbx' most likely called the sandbox: agent + folder,
+    # verbatim. Every command that takes a name resolves it through 'sbx list'
+    # first (see _ResolveSandboxName) and falls back to the candidate only when
+    # no sandbox exists yet.
     $folderName = (Get-Item .).Name
-    $projectSlug = _NormalizeName $folderName
-    $sandboxName = "$(_NormalizeName $Agent)-$projectSlug"
+    $sandboxName = "$Agent-$folderName"
 
     # --- Status mode ---------------------------------------------------------
     if ($Status) {
-        Write-Host "Sandboxes matching '$projectSlug':"
-        $list = & sbx list 2>&1 | Where-Object { $_ -match [regex]::Escape($projectSlug) }
+        Write-Host "Sandboxes matching '$folderName':"
+        $key = _FoldName $folderName
+        $list = & sbx list 2>&1 | Where-Object { (_FoldName "$_") -match [regex]::Escape($key) }
         if ($list) { $list | ForEach-Object { Write-Host "  $_" } }
         else       { Write-Host "  (none found)" }
         return
@@ -196,17 +213,21 @@ clone: false
 
     # --- Stop mode -----------------------------------------------------------
     if ($Stop) {
-        if ($DryRun) { Write-Host "[dry-run] sbx stop $sandboxName"; return }
-        Write-Host "Stopping sandbox: $sandboxName"
-        & sbx stop $sandboxName
+        $target = if ($DryRun) { $sandboxName } else { (_ResolveSandboxName $sandboxName) }
+        if (-not $target) { Write-Warning "No sandbox found matching '$sandboxName'."; return }
+        if ($DryRun) { Write-Host "[dry-run] sbx stop $target"; return }
+        Write-Host "Stopping sandbox: $target"
+        & sbx stop $target
         return
     }
 
     # --- Exec mode -----------------------------------------------------------
     if ($Exec) {
-        if ($DryRun) { Write-Host "[dry-run] sbx exec -it $sandboxName bash"; return }
-        Write-Host "Exec into: $sandboxName"
-        & sbx exec -it $sandboxName bash
+        $target = if ($DryRun) { $sandboxName } else { (_ResolveSandboxName $sandboxName) }
+        if (-not $target) { Write-Warning "No sandbox found matching '$sandboxName'."; return }
+        if ($DryRun) { Write-Host "[dry-run] sbx exec -it $target bash"; return }
+        Write-Host "Exec into: $target"
+        & sbx exec -it $target bash
         return
     }
 
@@ -245,10 +266,10 @@ clone: false
     }
 
     # Check if sandbox already exists; if so, resume it directly
-    $existing = & sbx list 2>&1 | Where-Object { $_ -match [regex]::Escape($sandboxName) }
+    $existing = _ResolveSandboxName $sandboxName
     if ($existing) {
-        Write-Host "Resuming existing sandbox: $sandboxName"
-        & sbx run --name $sandboxName
+        Write-Host "Resuming existing sandbox: $existing"
+        & sbx run --name $existing
     } else {
         & sbx @sbxArgs
     }
