@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -843,5 +846,284 @@ func TestSweepBackupsRemovesLeftovers(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("after sweep: %v, want only the executable", names)
+	}
+}
+
+// --- release tarball -------------------------------------------------------
+
+// tarGz builds a gzipped tar in memory. A nil-bodied entry with a trailing slash is a
+// directory; setting link makes it a symlink, which extraction must refuse.
+func tarGz(t *testing.T, entries []tar.Header, bodies []string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	for i, h := range entries {
+		hdr := h
+		if hdr.Typeflag == tar.TypeReg {
+			hdr.Size = int64(len(bodies[i]))
+		}
+		if hdr.Mode == 0 {
+			hdr.Mode = 0o644
+		}
+		if err := tw.WriteHeader(&hdr); err != nil {
+			t.Fatal(err)
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			if _, err := tw.Write([]byte(bodies[i])); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func reg(name string) tar.Header  { return tar.Header{Name: name, Typeflag: tar.TypeReg} }
+func dir_(name string) tar.Header { return tar.Header{Name: name, Typeflag: tar.TypeDir, Mode: 0o755} }
+
+func TestExtractTarGzWritesTheSrcTree(t *testing.T) {
+	data := tarGz(t,
+		[]tar.Header{dir_("src/"), dir_("src/sbx-claude-dotnet10/"), reg("src/sbx-claude-dotnet10/Dockerfile"), reg("src/sbx-claude-dotnet10/template.yaml")},
+		[]string{"", "", "FROM scratch\n", "name: sbx-claude-dotnet10\n"})
+
+	dest := t.TempDir()
+	n, err := extractTarGz(data, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("wrote %d files, want 2", n)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "src", "sbx-claude-dotnet10", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "FROM scratch\n" {
+		t.Errorf("Dockerfile = %q", got)
+	}
+}
+
+func TestExtractTarGzRefusesEscapesAndOddEntries(t *testing.T) {
+	cases := []struct {
+		name    string
+		hdrs    []tar.Header
+		bodies  []string
+		wantErr string // empty => must succeed but write nothing outside src/
+	}{
+		{
+			name:    "parent traversal",
+			hdrs:    []tar.Header{reg("src/../../escaped.txt")},
+			bodies:  []string{"pwned"},
+			wantErr: "", // Clean() moves it out of src/, so it is ignored, not written
+		},
+		{
+			name:    "absolute path",
+			hdrs:    []tar.Header{reg("/etc/passwd")},
+			bodies:  []string{"pwned"},
+			wantErr: "",
+		},
+		{
+			name:    "symlink inside src",
+			hdrs:    []tar.Header{{Name: "src/link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"}},
+			bodies:  []string{""},
+			wantErr: "unsupported type",
+		},
+		{
+			name:    "hard link inside src",
+			hdrs:    []tar.Header{{Name: "src/hard", Typeflag: tar.TypeLink, Linkname: "src/x"}},
+			bodies:  []string{""},
+			wantErr: "unsupported type",
+		},
+		{
+			name:    "outside src is ignored",
+			hdrs:    []tar.Header{reg("README.md"), dir_("src/"), reg("src/t/Dockerfile")},
+			bodies:  []string{"hi", "", "FROM scratch\n"},
+			wantErr: "",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dest := t.TempDir()
+			_, err := extractTarGz(tarGz(t, c.hdrs, c.bodies), dest)
+			if c.wantErr == "" {
+				if err != nil {
+					t.Fatalf("err = %v, want success", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Fatalf("err = %v, want %q", err, c.wantErr)
+			}
+			// Whatever happened, nothing may exist outside the src/ subtree.
+			entries, err := os.ReadDir(dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range entries {
+				if e.Name() != "src" {
+					t.Errorf("extraction wrote %q outside src/", e.Name())
+				}
+			}
+			if _, err := os.Stat(filepath.Join(dest, "..", "escaped.txt")); err == nil {
+				t.Error("extraction escaped the destination directory")
+			}
+		})
+	}
+}
+
+func TestExtractTarGzRejectsTooManyEntries(t *testing.T) {
+	hdrs := make([]tar.Header, maxTarEntries+1)
+	bodies := make([]string, maxTarEntries+1)
+	for i := range hdrs {
+		hdrs[i] = reg(fmt.Sprintf("src/t/f%d", i))
+		bodies[i] = "x"
+	}
+	if _, err := extractTarGz(tarGz(t, hdrs, bodies), t.TempDir()); err == nil ||
+		!strings.Contains(err.Error(), "entries") {
+		t.Fatalf("err = %v, want an entry-count refusal", err)
+	}
+}
+
+func TestExtractTarGzRejectsNonGzip(t *testing.T) {
+	if _, err := extractTarGz([]byte("not a gzip stream"), t.TempDir()); err == nil ||
+		!strings.Contains(err.Error(), "gzip") {
+		t.Fatalf("err = %v, want a gzip error", err)
+	}
+}
+
+// cacheHome points os.UserCacheDir at a temp dir on every platform.
+func cacheHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir) // linux
+	t.Setenv("LocalAppData", dir)   // windows
+	t.Setenv("HOME", dir)           // darwin: $HOME/Library/Caches
+	return dir
+}
+
+// tarballServer serves manifest.json, a tarball and their .sha256 sidecars, counting hits.
+func tarballServer(t *testing.T, tarball []byte, hits *int) *httptest.Server {
+	t.Helper()
+	sum := func(b []byte) string { d := sha256.Sum256(b); return hex.EncodeToString(d[:]) }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*hits++
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(tarball)
+		case strings.HasSuffix(r.URL.Path, ".tar.gz.sha256"):
+			fmt.Fprintf(w, "%s  templates-0.2.5.tar.gz\n", sum(tarball))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	orig := repoWeb
+	repoWeb = srv.URL
+	t.Cleanup(func() { repoWeb = orig; srv.Close() })
+	return srv
+}
+
+func TestFetchDockerfileUsesTheTarball(t *testing.T) {
+	cacheHome(t)
+	tarball := tarGz(t,
+		[]tar.Header{dir_("src/"), reg("src/sbx-claude-dotnet10/Dockerfile"), reg("src/sbx-claude-python-uv/Dockerfile")},
+		[]string{"", "FROM dotnet\n", "FROM python\n"})
+
+	hits := 0
+	srv := tarballServer(t, tarball, &hits)
+	m := &Manifest{Tarball: "templates-0.2.5.tar.gz"}
+	dotnet := &TemplateEntry{Name: "sbx-claude-dotnet10", Dockerfile: "sbx-claude-dotnet10.Dockerfile"}
+	python := &TemplateEntry{Name: "sbx-claude-python-uv", Dockerfile: "sbx-claude-python-uv.Dockerfile"}
+
+	path, err := fetchDockerfile(srv.Client(), "templates-v0.2.5", m, dotnet, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := os.ReadFile(path); string(body) != "FROM dotnet\n" {
+		t.Errorf("Dockerfile = %q", body)
+	}
+	// The context directory handed to `docker build` is the template's own directory.
+	if filepath.Base(filepath.Dir(path)) != "sbx-claude-dotnet10" {
+		t.Errorf("context dir = %q", filepath.Dir(path))
+	}
+
+	after := hits
+	// A second template from the same release is already on disk: no further downloads.
+	if _, err := fetchDockerfile(srv.Client(), "templates-v0.2.5", m, python, false); err != nil {
+		t.Fatal(err)
+	}
+	if hits != after {
+		t.Errorf("second template caused %d extra requests, want 0", hits-after)
+	}
+}
+
+func TestFetchDockerfileFallsBackWithoutATarball(t *testing.T) {
+	cacheHome(t)
+	const body = "FROM legacy\n"
+	digest := sha256.Sum256([]byte(body))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256") {
+			fmt.Fprintf(w, "%s  x.Dockerfile\n", hex.EncodeToString(digest[:]))
+			return
+		}
+		fmt.Fprint(w, body)
+	}))
+	orig := repoWeb
+	repoWeb = srv.URL
+	t.Cleanup(func() { repoWeb = orig; srv.Close() })
+
+	m := &Manifest{} // pre-tarball manifest
+	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Dockerfile: "x.Dockerfile"}
+	path, err := fetchDockerfile(srv.Client(), "templates-v0.1.3", m, entry, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != body {
+		t.Errorf("Dockerfile = %q", got)
+	}
+}
+
+func TestEnsureTemplateTreeRefreshReplacesStaleFiles(t *testing.T) {
+	cacheHome(t)
+	hits := 0
+	old := tarGz(t, []tar.Header{dir_("src/"), reg("src/t/Dockerfile"), reg("src/t/gone.txt")},
+		[]string{"", "FROM old\n", "stale"})
+	srv := tarballServer(t, old, &hits)
+	m := &Manifest{Tarball: "templates-0.2.5.tar.gz"}
+
+	tree, err := ensureTemplateTree(srv.Client(), "templates-v0.2.5", m, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(tree, "t", "gone.txt")); err != nil {
+		t.Fatal("first extraction is incomplete")
+	}
+
+	// Re-publish the release without gone.txt; --refresh must not leave it behind.
+	srv.Close()
+	hits = 0
+	fresh := tarGz(t, []tar.Header{dir_("src/"), reg("src/t/Dockerfile")}, []string{"", "FROM new\n"})
+	tarballServer(t, fresh, &hits)
+
+	tree, err = ensureTemplateTree(srv.Client(), "templates-v0.2.5", m, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := os.ReadFile(filepath.Join(tree, "t", "Dockerfile")); string(body) != "FROM new\n" {
+		t.Errorf("Dockerfile = %q, want the refreshed content", body)
+	}
+	if _, err := os.Stat(filepath.Join(tree, "t", "gone.txt")); err == nil {
+		t.Error("refresh kept a file the new release no longer ships")
+	}
+	// The swap must not leave extraction temp dirs behind.
+	entries, _ := os.ReadDir(filepath.Dir(tree))
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".sbxup-extract-") {
+			t.Errorf("leftover temp dir %q", e.Name())
+		}
 	}
 }

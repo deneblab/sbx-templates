@@ -195,9 +195,29 @@ func loadManifest(client *http.Client, tag string, refresh bool) (*Manifest, err
 	return m, nil
 }
 
-// fetchDockerfile returns the on-disk path of a template's Dockerfile, downloading and
-// verifying it if it is not already cached.
-func fetchDockerfile(client *http.Client, tag string, t *TemplateEntry, refresh bool) (string, error) {
+// fetchDockerfile returns the on-disk path of a template's Dockerfile.
+//
+// The release tarball is the normal source: one verified download makes every template in the
+// release available, so switching templates later costs nothing and works offline. A manifest
+// without a `tarball` field falls back to fetching that one Dockerfile as its own asset, which
+// is how releases before the tarball became load-bearing keep working.
+func fetchDockerfile(client *http.Client, tag string, m *Manifest, t *TemplateEntry, refresh bool) (string, error) {
+	if m.Tarball == "" {
+		return fetchDockerfileAsset(client, tag, t, refresh)
+	}
+	tree, err := ensureTemplateTree(client, tag, m, refresh)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(tree, t.Name, "Dockerfile")
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("%s has no %s/Dockerfile inside %s", tag, t.Name, m.Tarball)
+	}
+	return path, nil
+}
+
+// fetchDockerfileAsset downloads and verifies a single <name>.Dockerfile release asset.
+func fetchDockerfileAsset(client *http.Client, tag string, t *TemplateEntry, refresh bool) (string, error) {
 	dir, err := templatesCacheDir(tag)
 	if err != nil {
 		return "", err

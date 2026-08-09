@@ -92,9 +92,9 @@ When `cache` is set, the directory is created at the project root (if missing) a
 ## Run without Docker Hub
 
 Every push that touches `src/` publishes a **`templates-v{version}` GitHub Release** carrying the
-Dockerfiles themselves — each `<name>.Dockerfile`, a `manifest.json` catalogue, a
-`templates-{version}.tar.gz` of the whole `src/` tree, and a `.sha256` for each. `sbxup` can build
-from those directly, so no image is ever pulled from a registry:
+Dockerfiles themselves — a `manifest.json` catalogue, a `templates-{version}.tar.gz` of the whole
+`src/` tree, each `<name>.Dockerfile` individually, and a `.sha256` for each. `sbxup` builds from
+those directly, so no image is ever pulled from a registry:
 
 ```bash
 sbxup --init          # lists the templates in the latest release, you pick one
@@ -118,13 +118,17 @@ Useful flags:
 sbxup --build --template dotnet10   # build a template without editing the config first
 sbxup --rebuild                     # rebuild even though the image exists
 sbxup --update-claude               # rebuild only the Claude Code layer
-sbxup --refresh                     # re-download the manifest and Dockerfile
+sbxup --refresh                     # re-download the manifest and template tarball
 sbxup --init --template dotnet10    # non-interactive; no prompt
 ```
 
+`sbxup` downloads the manifest and the tarball, then extracts `src/` from it — one download makes
+every template in the release available, so switching templates later needs no network at all.
+
 Every downloaded asset is checksum-verified before it is written or built — a Dockerfile becomes the
-agent's execution environment, so a mismatch aborts and nothing is built. Downloads are cached under
-`~/.cache/sbxup/templates/<release>/` (`%LocalAppData%` on Windows).
+agent's execution environment, so a mismatch aborts and nothing is built. Extraction is equally
+wary: only regular files under `src/`, and any symlink or path escaping the destination aborts it.
+Downloads are cached under `~/.cache/sbxup/templates/<release>/` (`%LocalAppData%` on Windows).
 
 **Docker Desktop is only needed to build.** The sandbox runtime has its own image store, so once a
 template is registered, `sbxup` reuses it without touching Docker or the network — `sbx template ls`

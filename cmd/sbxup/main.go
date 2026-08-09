@@ -374,7 +374,7 @@ func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
 		return tag, nil
 	}
 
-	dockerfile, err := fetchDockerfile(client, release, entry, o.refresh)
+	dockerfile, err := fetchDockerfile(client, release, m, entry, o.refresh)
 	if err != nil {
 		return "", err
 	}

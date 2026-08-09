@@ -178,8 +178,9 @@ func buildTemplate(dockerfile string, t *TemplateEntry, release string, force, u
 		return "", errDockerUnavailable
 	}
 
-	// The cache directory holds only Dockerfiles, which makes it a deliberately minimal build
-	// context: these templates never COPY from it, and a small context keeps the build fast.
+	// The Dockerfile's own directory, extracted from the release tarball as src/<name>/ — the
+	// same context `build-push.sh` passes locally. It holds only that template's Dockerfile and
+	// template.yaml, so the context stays tiny; these templates never COPY from it anyway.
 	context := filepath.Dir(dockerfile)
 	args := buildArgs(dockerfile, context, tag, t.Version, release, time.Now().UTC().Format("2006-01-02T15:04:05Z"), updateClaude)
 

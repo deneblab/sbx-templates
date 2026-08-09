@@ -79,7 +79,7 @@ sbxup                               # builds locally on first run, reuses the im
 sbxup --build --template dotnet10   # build without editing the config
 sbxup --rebuild                     # force a rebuild
 sbxup --update-claude               # rebuild only the claude stage
-sbxup --refresh                     # re-download manifest + Dockerfile
+sbxup --refresh                     # re-download manifest + tarball
 
 task templates:manifest             # print the manifest CI would publish
 task templates:stage                # stage the full asset set into ./staging
@@ -88,6 +88,23 @@ task templates:stage                # stage the full asset set into ./staging
 Assets are checksum-verified before use and cached at `os.UserCacheDir()/sbxup/templates/<release>/`.
 `buildTemplate` uses the same `VERSION` / `SHORT_SHA` / `BUILD_DATE` build-arg contract as
 `build-push.sh --no-push`, so a locally built image carries the same OCI labels as a published one.
+
+### The release tarball is what sbxup extracts
+
+`fetchDockerfile` takes `templates-{version}.tar.gz`, not the individual `<name>.Dockerfile`
+assets: one verified download populates `<cache>/<release>/src/`, so every template in the release
+is then available with no further network access, and each build gets `src/<name>/` as its context —
+the same directory `build-push.sh` passes locally.
+
+`extractTarGz` is deliberately strict, because the archive is a remote artifact that becomes
+`docker build` input: only directories and regular files, only under `src/`, and a symlink, hard
+link or path escaping the destination aborts the extraction rather than being sanitised. Extraction
+lands in a sibling temp directory that is swapped in by rename, so an interrupted run cannot leave a
+half-populated tree for a later run to build from.
+
+**Keep publishing the per-template `<name>.Dockerfile` assets.** Every `sbxup` released before this
+change fetches them, and `fetchDockerfileAsset` remains the fallback for a manifest with no
+`tarball` field. Dropping them from the release would break already-installed binaries.
 
 **The sandbox runtime keeps its own image store, separate from the host Docker daemon.** Confirmed on
 Windows: `sbx` runs sandboxes with Docker Desktop closed, while `docker build` fails against
