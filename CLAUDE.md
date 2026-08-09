@@ -196,6 +196,9 @@ reuses the image users already built instead of rebuilding it.
 installs the native binary directly (no .NET SDK). Get it from
 [releases](https://github.com/deneblab/abcversion/releases/latest).
 
+`docs/abcversion-path-vs-project.md` records why the per-template entries are unavoidable —
+`--path` locates a repository, it does not filter commits — with measurements to re-verify it.
+
 ## Building sbxup
 
 ```bash
