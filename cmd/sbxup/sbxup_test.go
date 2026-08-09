@@ -85,51 +85,46 @@ func TestParseArgs(t *testing.T) {
 	})
 }
 
-func TestFindConfigSearchOrder(t *testing.T) {
-	t.Run("prefers .sbx/sbxup.config.yaml", func(t *testing.T) {
+func TestFindConfig(t *testing.T) {
+	t.Run("reads .sbx/sbxup.config.yaml", func(t *testing.T) {
 		chdir(t)
 		write(t, ".sbx/sbxup.config.yaml", "agent: new\n")
-		write(t, ".sbx/sbxup.yaml", "agent: near\n")
-		write(t, ".agents/sbxup.yaml", "agent: a\n")
-		write(t, ".agents/sbx-runner.yaml", "agent: b\n")
-		write(t, "sbxup.yaml", "agent: c\n")
 		if got := findConfig(); got != ".sbx/sbxup.config.yaml" {
 			t.Fatalf("findConfig() = %q", got)
 		}
 	})
 
-	t.Run("accepts the near-miss .sbx/sbxup.yaml", func(t *testing.T) {
+	t.Run("no other location is read", func(t *testing.T) {
 		chdir(t)
-		write(t, ".sbx/sbxup.yaml", "agent: near\n")
-		if got := findConfig(); got != ".sbx/sbxup.yaml" {
-			t.Fatalf("findConfig() = %q", got)
+		for _, p := range legacyConfigPaths {
+			write(t, p, "agent: legacy\n")
+		}
+		if got := findConfig(); got != "" {
+			t.Fatalf("findConfig() = %q, want empty — only .sbx/sbxup.config.yaml is read", got)
 		}
 	})
 
-	t.Run("falls back to the legacy .agents location", func(t *testing.T) {
-		chdir(t)
-		write(t, ".agents/sbxup.yaml", "agent: a\n")
-		write(t, ".agents/sbx-runner.yaml", "agent: b\n")
-		write(t, "sbxup.yaml", "agent: c\n")
-		if got := findConfig(); got != ".agents/sbxup.yaml" {
-			t.Fatalf("findConfig() = %q", got)
-		}
-	})
-
-	t.Run("falls back to the legacy sbx-runner name", func(t *testing.T) {
-		chdir(t)
-		write(t, ".agents/sbx-runner.yaml", "agent: b\n")
-		if got := findConfig(); got != ".agents/sbx-runner.yaml" {
-			t.Fatalf("findConfig() = %q", got)
-		}
-	})
-
-	t.Run("no config", func(t *testing.T) {
+	t.Run("no config at all", func(t *testing.T) {
 		chdir(t)
 		if got := findConfig(); got != "" {
 			t.Fatalf("findConfig() = %q, want empty", got)
 		}
 	})
+}
+
+func TestLegacyConfigIsReportedNotLoaded(t *testing.T) {
+	chdir(t)
+	if got := legacyConfig(); got != "" {
+		t.Fatalf("legacyConfig() = %q with no files present", got)
+	}
+	write(t, ".agents/sbx-runner.yaml", "agent: b\n")
+	if got := legacyConfig(); got != ".agents/sbx-runner.yaml" {
+		t.Fatalf("legacyConfig() = %q", got)
+	}
+	// Present but not loaded: the canonical path is still the only one findConfig returns.
+	if got := findConfig(); got != "" {
+		t.Fatalf("findConfig() = %q, want empty", got)
+	}
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -777,5 +772,41 @@ func TestBuildTemplateReportsAStoppedDaemon(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Docker Desktop") {
 		t.Errorf("err = %v, want an actionable Docker Desktop message", err)
+	}
+}
+
+func TestBackupNameIsUniquePerProcess(t *testing.T) {
+	exe := `C:\Users\piotr\AppData\Local\Programs\sbxup\sbxup.exe`
+	a, b := backupName(exe, 1234), backupName(exe, 5678)
+	if a == b {
+		t.Fatal("backup names collide across processes")
+	}
+	// Must stay a sibling of the executable so the final step is a same-directory rename,
+	// and must match the glob sweepBackups uses.
+	if filepath.Dir(a) != filepath.Dir(exe) && !strings.HasPrefix(a, exe+".old") {
+		t.Errorf("backupName = %q, want a %s.old* sibling", a, exe)
+	}
+}
+
+func TestSweepBackupsRemovesLeftovers(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "sbxup")
+	write(t, exe, "binary")
+	for _, leftover := range []string{exe + ".old", exe + ".old-111", exe + ".old-222"} {
+		write(t, leftover, "stale")
+	}
+
+	sweepBackups(exe)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "sbxup" {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("after sweep: %v, want only the executable", names)
 	}
 }

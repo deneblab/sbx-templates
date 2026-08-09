@@ -136,6 +136,24 @@ func selfUpdate() error {
 	return nil
 }
 
+// backupName is where the running executable is moved aside on Windows. The pid keeps it
+// unique, so an undeletable leftover from an earlier update cannot block this one.
+func backupName(exe string, pid int) string {
+	return fmt.Sprintf("%s.old-%d", exe, pid)
+}
+
+// sweepBackups deletes leftovers from earlier updates. Best-effort: one still held open by a
+// running process simply stays, which is now harmless because names no longer collide.
+func sweepBackups(exe string) {
+	matches, err := filepath.Glob(exe + ".old*")
+	if err != nil {
+		return
+	}
+	for _, m := range matches {
+		os.Remove(m)
+	}
+}
+
 // replaceSelf swaps the running executable for newBinary. The new file is staged alongside
 // the target so the final step is a same-filesystem rename.
 func replaceSelf(newBinary []byte) error {
@@ -166,13 +184,18 @@ func replaceSelf(newBinary []byte) error {
 		return err
 	}
 
-	// Windows refuses to replace a running image, so move it aside first. The leftover is
-	// best-effort: it cannot be deleted while this process holds it open.
+	// Windows refuses to replace a running image, so move it aside first.
 	if runtime.GOOS == "windows" {
-		old := exe + ".old"
-		os.Remove(old)
+		// A fixed ".old" name is a trap: Go's rename maps to MoveFileEx with
+		// MOVEFILE_REPLACE_EXISTING, and replacing a *locked* leftover from an earlier update
+		// fails with "Access is denied" — reported as a failure to move the running exe, which
+		// points at the wrong file. A pid-unique name cannot collide with that leftover.
+		old := backupName(exe, os.Getpid())
+		sweepBackups(exe)
 		if err := os.Rename(exe, old); err != nil {
-			return fmt.Errorf("cannot move the running executable aside: %w", err)
+			return fmt.Errorf("cannot move the running executable aside: %w\n"+
+				"Close any other running sbxup processes and retry, or reinstall with:\n"+
+				"  irm https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.ps1 | iex", err)
 		}
 		if err := os.Rename(tmpName, exe); err != nil {
 			os.Rename(old, exe) // put it back rather than leaving nothing installed

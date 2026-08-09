@@ -9,14 +9,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// defaultConfigPath is the one location sbxup reads. There is deliberately no search order:
+// a single path means the config a project has is the config sbxup uses, with no ambiguity
+// about which of several files won.
 const defaultConfigPath = ".sbx/sbxup.config.yaml"
 
-// configSearchPaths is the ordered lookup for an implicit config. `.sbx/` is the current home;
-// the `.agents/` and sbx-runner names are kept so repositories set up for earlier versions —
-// including the previous PowerShell tool — keep working untouched. `.sbx/sbxup.yaml` is
-// accepted as a near-miss of the canonical name rather than failing with "config not found".
-var configSearchPaths = []string{
-	".sbx/sbxup.config.yaml",
+// legacyConfigPaths are no longer loaded. They are probed only so that a project still holding
+// one gets "rename this file" instead of a bare "config not found".
+var legacyConfigPaths = []string{
 	".sbx/sbxup.yaml",
 	".agents/sbxup.yaml",
 	".agents/sbx-runner.yaml",
@@ -47,9 +47,18 @@ type Config struct {
 	Build    *BuildConfig
 }
 
-// findConfig returns the first existing config in search order, or "" when none exists.
+// findConfig returns the config path if it exists, or "" when it does not.
 func findConfig() string {
-	for _, p := range configSearchPaths {
+	if _, err := os.Stat(defaultConfigPath); err == nil {
+		return defaultConfigPath
+	}
+	return ""
+}
+
+// legacyConfig returns the first no-longer-supported config file present, or "". Used purely
+// to make the missing-config error actionable.
+func legacyConfig() string {
+	for _, p := range legacyConfigPaths {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}

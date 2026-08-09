@@ -54,9 +54,8 @@ sbxup --help         # show all options
 
 To upgrade later, run `sbxup --self-update` or re-run the install command — both are idempotent.
 
-> The previous PowerShell function (`shells/sbx-runner.ps1`) is **deprecated** but still works.
-> After installing `sbxup`, remove the `. C:\path\to\sbx-templates\shells\sbx-runner.ps1` line from
-> your `$PROFILE.CurrentUserAllHosts`.
+> The old PowerShell function (`shells/sbx-runner.ps1`) has been **removed**. If your
+> `$PROFILE.CurrentUserAllHosts` still dot-sources it, delete that line — `sbxup` replaces it.
 
 ### Option B — direct sbx command
 
@@ -74,9 +73,9 @@ project/
 │   └── sbxup.config.yaml
 ```
 
-Older locations keep working unchanged — `sbxup` searches `.sbx/sbxup.config.yaml`,
-`.sbx/sbxup.yaml`, `.agents/sbxup.yaml`, `.agents/sbx-runner.yaml`, `sbxup.yaml`, then
-`sbx-runner.yaml`, and uses the first one it finds:
+This is the **only** location `sbxup` reads — there is no search order. A project still holding an
+older `.agents/sbxup.yaml`, `.agents/sbx-runner.yaml` or root-level `sbxup.yaml` needs it renamed;
+`sbxup` names the stale file and tells you what to rename it to.
 
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest

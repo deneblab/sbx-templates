@@ -16,7 +16,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`scripts/release/manifest.sh`** — assembles the `templates-v*` release manifest and stages its assets; called by both CI and `task templates:*`.
 - **`src/*/template.yaml`** — per-template metadata (name, short alias, description) that feeds `manifest.json`.
 - **`install.sh` / `install.ps1`** — one-line installers that fetch a checksum-verified `sbxup` binary from GitHub Releases.
-- **`shells/sbx-runner.ps1`** — **deprecated** PowerShell predecessor of `sbxup`; kept so existing setups keep working.
 - **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`, `sbxup:*`).
 - **`.agents/`** — issue tracking and agent task system. Project short ID: `SBXT`.
 
@@ -61,7 +60,7 @@ build:              # optional: build the template locally instead of pulling it
   release: templates-v0.1.3
 ```
 
-Config search order: `.sbx/sbxup.config.yaml` → `.sbx/sbxup.yaml` → `.agents/sbxup.yaml` → `.agents/sbx-runner.yaml` → `sbxup.yaml` → `sbx-runner.yaml`. The `.agents/` and `sbx-runner` names are kept so projects set up for earlier versions — including the old PowerShell tool — keep working unchanged.
+`.sbx/sbxup.config.yaml` is the **only** path read — there is no search order, so there is never a question of which of several files won. `legacyConfigPaths` in `config.go` lists the previously supported names; they are probed only to turn "config not found" into a rename instruction, never loaded.
 
 When `clone: true` (or `--clone`), `sbxup` passes `--clone` to `sbx run` so the agent works on a private in-container git clone of the host repo. Default is off; `--no-clone` forces it off. The removed `branch` key now warns with a hint to rename it to `clone`.
 

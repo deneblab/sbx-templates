@@ -1,8 +1,7 @@
 // Command sbxup launches and manages Claude Code sandboxes from a small YAML config.
 //
-// It is a port of shells/sbx-runner.ps1 to a single cross-platform binary. Behaviour is
-// deliberately identical: sbxup only ever builds an argument list and hands it to the `sbx`
-// CLI, so the sandbox semantics live in `sbx`, not here.
+// sbxup only ever builds an argument list and hands it to the `sbx` CLI, so the sandbox
+// semantics live in `sbx`, not here.
 package main
 
 import (
@@ -43,7 +42,7 @@ Parameters:
                      a template name from the release, e.g. dotnet10
   --agent <name>     Agent name, e.g. claude (overrides config)
 
-Config file (.sbx/sbxup.config.yaml; .agents/ locations still work):
+Config file — .sbx/sbxup.config.yaml, the only location read:
   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
   agent: claude
   clone: false        # optional: true => run on a private in-container git clone
@@ -194,6 +193,10 @@ func run(argv []string) error {
 		if err != nil {
 			return err
 		}
+	} else if legacy := legacyConfig(); legacy != "" {
+		// sbxup reads one path only. Naming the stale file turns a puzzling "agent is
+		// required" into an obvious one-line fix.
+		warnf("Found %s, which sbxup no longer reads. Rename it to %s.", legacy, defaultConfigPath)
 	}
 
 	template := firstNonEmpty(o.template, cfg.Template)
