@@ -156,6 +156,7 @@ dev/
 
 # Go build artifacts
 /bin/
+/sbxup
 *.exe
 *.test
 *.out

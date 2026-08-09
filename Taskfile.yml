@@ -15,11 +15,29 @@ tasks:
     desc: "Run all tests"
     cmds:
       - task: "test:version"
+      - task: "sbxup:test"
 
   "test:version":
     desc: "Run version script tests"
     cmds:
       - bash scripts/version/tests/version.sh.test.sh
+
+  # ── sbxup (Go CLI) ─────────────────────────────────────────────────────────
+
+  "sbxup:test":
+    desc: "Run sbxup Go tests"
+    cmds:
+      - go test ./cmd/sbxup/
+
+  "sbxup:build":
+    desc: "Build sbxup for the current platform into ./bin"
+    cmds:
+      - go build -trimpath -ldflags "-s -w -X main.version=$(abcversion -p semversion --project sbxup)" -o bin/sbxup ./cmd/sbxup
+
+  "sbxup:version":
+    desc: "Show computed semver for sbxup (via abcversion)"
+    cmds:
+      - abcversion -p semversion --project sbxup
 
   # ── Per-image shortcuts ────────────────────────────────────────────────────
 

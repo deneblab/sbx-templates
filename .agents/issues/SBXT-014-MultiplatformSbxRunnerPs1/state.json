@@ -1,0 +1,68 @@
+{
+  "issueId": "SBXT-014-MultiplatformSbxRunnerPs1",
+  "status": "completed",
+  "createdFiles": [
+    "go.mod",
+    "go.sum",
+    "cmd/sbxup/main.go",
+    "cmd/sbxup/config.go",
+    "cmd/sbxup/sbx.go",
+    "cmd/sbxup/selfupdate.go",
+    "cmd/sbxup/sbxup_test.go",
+    ".abcversion.json",
+    "install.sh",
+    "install.ps1",
+    ".github/workflows/release-sbxup.yml"
+  ],
+  "editedFiles": [
+    "Taskfile.yml",
+    "README.md",
+    "shells/README.md",
+    "CLAUDE.md"
+  ],
+  "components": [
+    { "id": 1, "path": "go.mod", "action": "create", "done": true },
+    { "id": 2, "path": "cmd/sbxup/main.go", "action": "create", "done": true },
+    { "id": 3, "path": "cmd/sbxup/config.go", "action": "create", "done": true },
+    { "id": 4, "path": "cmd/sbxup/sbx.go", "action": "create", "done": true },
+    { "id": 5, "path": "cmd/sbxup/selfupdate.go", "action": "create", "done": true },
+    { "id": 6, "path": "cmd/sbxup/sbxup_test.go", "action": "create", "done": true },
+    { "id": 7, "path": ".abcversion.json", "action": "create", "done": true },
+    { "id": 8, "path": "install.sh", "action": "create", "done": true },
+    { "id": 9, "path": "install.ps1", "action": "create", "done": true },
+    { "id": 10, "path": ".github/workflows/release-sbxup.yml", "action": "create", "done": true },
+    { "id": 11, "path": "Taskfile.yml", "action": "edit", "done": true },
+    { "id": 12, "path": "shells/README.md", "action": "edit", "done": true },
+    { "id": 13, "path": "README.md", "action": "edit", "done": true },
+    { "id": 14, "path": "CLAUDE.md", "action": "edit", "done": true }
+  ],
+  "lastComponent": 14,
+  "nextComponent": null,
+  "decisions": {
+    "implementation": "C — single Go binary (revised; superseded bash+ps1)",
+    "distribution": "GitHub Releases, tagged versioned assets",
+    "update": "idempotent installer re-run + --self-update",
+    "installModel": "PATH executable on both platforms",
+    "name": "sbxup (renamed from sbx-runner)",
+    "versioning": "AbcVersion (deneblab/AbcVersion), scoped to sbxup only"
+  },
+  "resolvedQuestions": {
+    "tagVersionScheme": "abcversion -p semversion --project sbxup; tag sbxup-v{version}",
+    "configFilename": "prefer .agents/sbxup.yaml, fall back to .agents/sbx-runner.yaml (backward compatible)",
+    "goToolchain": "go1.26.0 present; proxy.golang.org reachable (yaml.v3 usable)"
+  },
+  "verification": {
+    "goTest": "ok — 20 tests pass (go test ./...)",
+    "goVet": "clean",
+    "gofmt": "clean",
+    "crossCompile": "all 6 targets build (linux/darwin/windows x amd64/arm64, CGO_ENABLED=0)",
+    "dryRunParity": "sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude — matches sbx-runner.ps1",
+    "legacyConfig": "reads existing .agents/sbx-runner.yaml unchanged",
+    "installerHappyPath": "installed + version-stamped binary reports 0.0.1 (file:// release)",
+    "installerTamper": "corrupt asset correctly refused, nothing installed",
+    "installShSyntax": "sh -n clean",
+    "yamlParse": "Taskfile.yml + both workflows parse",
+    "abcversion": "abcversion 1.2.17 resolves --project sbxup from .abcversion.json",
+    "notRun": "task CLI not installed in sandbox (Taskfile validated by YAML parse); real release requires push to main"
+  }
+}

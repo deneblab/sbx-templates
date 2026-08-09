@@ -1,4 +1,19 @@
-# sbx-runner
+# sbx-runner (deprecated)
+
+> **Deprecated — superseded by `sbxup`.**
+>
+> `sbxup` is a single cross-platform binary (Linux, macOS, Windows) with the same behaviour, plus
+> `--self-update`. It installs onto `PATH` with one command and needs no profile edits:
+>
+> ```powershell
+> irm https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.ps1 | iex
+> ```
+>
+> See the [root README](../README.md#run-a-sandbox). Your existing `.agents\sbx-runner.yaml` keeps
+> working — `sbxup` reads it unchanged.
+>
+> After installing `sbxup`, remove the dot-source line from `$PROFILE.CurrentUserAllHosts`.
+> This script remains only so current setups do not break; it will be removed in a later release.
 
 PowerShell function that wraps the `sbx` CLI to launch, manage, and connect to Claude Code sandboxes using a simple YAML config.
 

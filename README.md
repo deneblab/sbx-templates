@@ -15,26 +15,43 @@ All images extend `docker/sandbox-templates:claude-code`.
 
 ## Run a sandbox
 
-### Option A — sbx-runner (recommended)
+### Option A — sbxup (recommended)
 
-Dot-source `shells/sbx-runner.ps1` once in `$PROFILE.CurrentUserAllHosts`:
+`sbxup` is a single self-contained binary for Linux, macOS, and Windows. Install it with one command:
+
+```bash
+# Linux and macOS
+curl -sSL https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.sh | sh
+```
 
 ```powershell
-. C:\path\to\sbx-templates\shells\sbx-runner.ps1
+# Windows
+irm https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.ps1 | iex
 ```
+
+The installer picks the right binary for your platform, verifies its SHA-256 against the published
+checksum, and installs to `~/.local/bin` (`%LOCALAPPDATA%\Programs\sbxup` on Windows). Set
+`SBXUP_VERSION` to pin a release and `SBXUP_INSTALL_DIR` to choose the location.
 
 Then from any project directory:
 
-```powershell
-sbx-runner --init        # create default .agents\sbx-runner.yaml
-sbx-runner               # launch sandbox
-sbx-runner --dry-run     # preview command without running
-sbx-runner --clone       # run on a private in-container git clone
-sbx-runner --exec        # open shell in existing sandbox
-sbx-runner --status      # list sandboxes for current project
-sbx-runner --stop        # stop the sandbox
-sbx-runner --help        # show all options
+```bash
+sbxup --init         # create default .agents/sbxup.yaml
+sbxup                # launch sandbox
+sbxup --dry-run      # preview command without running
+sbxup --clone        # run on a private in-container git clone
+sbxup --exec         # open shell in existing sandbox
+sbxup --status       # list sandboxes for current project
+sbxup --stop         # stop the sandbox
+sbxup --self-update  # update to the latest release
+sbxup --help         # show all options
 ```
+
+To upgrade later, run `sbxup --self-update` or re-run the install command — both are idempotent.
+
+> The previous PowerShell function (`shells/sbx-runner.ps1`) is **deprecated** but still works.
+> After installing `sbxup`, remove the `. C:\path\to\sbx-templates\shells\sbx-runner.ps1` line from
+> your `$PROFILE.CurrentUserAllHosts`.
 
 ### Option B — direct sbx command
 
@@ -42,9 +59,10 @@ sbx-runner --help        # show all options
 sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude --clone
 ```
 
-### sbx-runner.yaml
+### sbxup.yaml
 
-Place in `.agents\sbx-runner.yaml` of any project:
+Place in `.agents/sbxup.yaml` of any project. Existing `.agents/sbx-runner.yaml` files keep working —
+`sbxup` searches `.agents/sbxup.yaml`, `.agents/sbx-runner.yaml`, `sbxup.yaml`, then `sbx-runner.yaml`:
 
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
@@ -104,9 +122,24 @@ clone: false
 
 The image is served from the local Docker daemon — no registry push needed.
 
+## Build sbxup from source
+
+Requires Go (see `go.mod` for the version).
+
+```bash
+task sbxup:test      # run the Go tests
+task sbxup:build     # build ./bin/sbxup for the current platform
+task sbxup:version   # show the computed sbxup version
+go run ./cmd/sbxup --dry-run
+```
+
+Releases are cut by `.github/workflows/release-sbxup.yml` on pushes to `main` that touch
+`cmd/sbxup/**`. It cross-compiles six targets (linux/darwin/windows × amd64/arm64), publishes each
+with a `.sha256` sidecar, and tags the release `sbxup-v{version}`.
+
 ## Versioning
 
-Version is computed from `version.yaml` + git commit count:
+**Docker images** are versioned from `version.yaml` + git commit count:
 
 ```yaml
 # version.yaml
@@ -117,6 +150,14 @@ baseCommitSha: abc1234   # optional — count commits only after this SHA
 ```bash
 bash scripts/version/version.sh --version-only   # e.g. 0.1.5
 pwsh scripts/version/version.ps1 -VersionOnly
+```
+
+**sbxup** is versioned with [AbcVersion](https://github.com/deneblab/AbcVersion) from
+`.abcversion.json`, scoped to the `cmd/sbxup` path so a runner release is cut only when runner
+source changes:
+
+```bash
+abcversion -p semversion --project sbxup
 ```
 
 ## Merge agent changes

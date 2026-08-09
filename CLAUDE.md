@@ -12,22 +12,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
 - **`scripts/version/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
-- **`shells/sbx-runner.ps1`** — PowerShell function (dot-sourced into profile) that reads `.agents/sbx-runner.yaml` and calls `sbx run`.
-- **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`).
+- **`cmd/sbxup/`** — Go source for `sbxup`, the cross-platform CLI that reads `.agents/sbxup.yaml` and calls `sbx run`. Single package; versioned by AbcVersion via `.abcversion.json`.
+- **`install.sh` / `install.ps1`** — one-line installers that fetch a checksum-verified `sbxup` binary from GitHub Releases.
+- **`shells/sbx-runner.ps1`** — **deprecated** PowerShell predecessor of `sbxup`; kept so existing setups keep working.
+- **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`, `sbxup:*`).
 - **`.agents/`** — issue tracking and agent task system. Project short ID: `SBXT`.
 
 ## Running a Sandbox
 
-```powershell
-sbx-runner               # reads .agents\sbx-runner.yaml, launches sandbox
-sbx-runner --init        # create default .agents\sbx-runner.yaml
-sbx-runner --dry-run     # preview without running
-sbx-runner --clone       # run on a private in-container git clone
+`sbxup` is a single binary for Linux, macOS, and Windows — no profile edits, no dot-sourcing.
+
+```bash
+sbxup                # reads .agents/sbxup.yaml, launches sandbox
+sbxup --init         # create default .agents/sbxup.yaml
+sbxup --dry-run      # preview without running
+sbxup --clone        # run on a private in-container git clone
+sbxup --self-update  # update to the latest release
 ```
 
-Requires `shells/sbx-runner.ps1` dot-sourced in `$PROFILE.CurrentUserAllHosts`.
+Install (or upgrade — both are idempotent):
 
-### sbx-runner.yaml
+```bash
+curl -sSL https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.sh | sh   # Linux/macOS
+```
+```powershell
+irm https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.ps1 | iex       # Windows
+```
+
+### sbxup.yaml
 
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
@@ -36,7 +48,9 @@ clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
 ```
 
-When `clone: true` (or `--clone`), `sbx-runner` passes `--clone` to `sbx run` so the agent works on a private in-container git clone of the host repo. Default is off; `--no-clone` forces it off. The removed `branch` key now warns with a hint to rename it to `clone`.
+Config search order: `.agents/sbxup.yaml` → `.agents/sbx-runner.yaml` → `sbxup.yaml` → `sbx-runner.yaml`, so projects set up for the old PowerShell tool keep working unchanged.
+
+When `clone: true` (or `--clone`), `sbxup` passes `--clone` to `sbx run` so the agent works on a private in-container git clone of the host repo. Default is off; `--no-clone` forces it off. The removed `branch` key now warns with a hint to rename it to `clone`.
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace. If not set, no cache mounting occurs.
 
@@ -115,6 +129,25 @@ pwsh scripts/version/version.ps1 -VersionOnly
 baseVersion: 0.1.0
 baseCommitSha: abc1234   # optional — count commits after this SHA
 ```
+
+Two versioning systems coexist deliberately:
+
+- **Docker images** — `version.yaml` + `scripts/version/version.sh` (above).
+- **`sbxup`** — [AbcVersion](https://github.com/deneblab/AbcVersion) via `.abcversion.json`, scoped to the `cmd/sbxup` path so a release is cut only when runner source changes:
+
+  ```bash
+  abcversion -p semversion --project sbxup   # or: task sbxup:version
+  ```
+
+## Building sbxup
+
+```bash
+task sbxup:test      # go test ./cmd/sbxup/
+task sbxup:build     # build ./bin/sbxup, version stamped via -ldflags
+go run ./cmd/sbxup --dry-run
+```
+
+`.github/workflows/release-sbxup.yml` cross-compiles six targets (linux/darwin/windows × amd64/arm64) with `CGO_ENABLED=0`, publishes each with a `.sha256` sidecar, and tags the release `sbxup-v{version}`. Statically linked, so the Linux binaries run on musl (Alpine) as well as glibc.
 
 ## Agent Task System
 
