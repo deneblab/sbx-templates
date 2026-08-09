@@ -1,0 +1,8 @@
+# This repo builds its own template locally rather than pulling it — the same flow
+# `sbxup --init` sets up for any project. See "Run without Docker Hub" in README.md.
+template: sbx-claude-dotnet10:0.1.3
+agent: claude
+clone: false
+build:
+  name: dotnet10
+  release: templates-v0.1.4

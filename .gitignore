@@ -152,8 +152,7 @@ dev/
 .agents/ralph/
 .claude/*
 .agents/*
- !.agents/sbx-runner.yaml
- 
+
 # Taskfile checksum cache
 .task/
 
