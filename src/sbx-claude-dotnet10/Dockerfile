@@ -36,7 +36,7 @@ ENV SBX_SANDBOX=true
 
 RUN dotnet --info
 
-# Stage 2: claude — install/update Claude Code; rebuild this stage alone to update
+# Stage 2: claude — install/update Claude Code; rebuild this stage alone to update all
 FROM deps AS claude
 
 USER root
