@@ -1,0 +1,6 @@
+# Line endings are normalized to LF in the repository and on checkout, on every
+# platform. Without this, editors on Windows rewrite files to CRLF and every
+# affected file shows up as a whole-file diff containing no actual change.
+#
+# text=auto lets git detect and leave binary files alone.
+* text=auto eol=lf
