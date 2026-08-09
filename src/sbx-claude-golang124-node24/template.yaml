@@ -1,0 +1,5 @@
+# Metadata for the templates-v* release manifest. Adding a template means adding a
+# directory under src/ with a Dockerfile and one of these — nothing else to update.
+name: sbx-claude-golang124-node24
+short: golang124-node24
+description: Go 1.24.2, Node.js 24.x

@@ -36,7 +36,7 @@ checksum, and installs to `~/.local/bin` (`%LOCALAPPDATA%\Programs\sbxup` on Win
 Then from any project directory:
 
 ```bash
-sbxup --init         # create default .agents/sbxup.yaml
+sbxup --init         # create .sbx/sbxup.config.yaml (pick a template)
 sbxup                # launch sandbox
 sbxup --dry-run      # preview command without running
 sbxup --clone        # run on a private in-container git clone
@@ -61,17 +61,79 @@ sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude --clone
 
 ### sbxup.yaml
 
-Place in `.agents/sbxup.yaml` of any project. Existing `.agents/sbx-runner.yaml` files keep working —
-`sbxup` searches `.agents/sbxup.yaml`, `.agents/sbx-runner.yaml`, `sbxup.yaml`, then `sbx-runner.yaml`:
+Place in `.sbx/sbxup.config.yaml` of any project:
+
+```
+project/
+├── .sbx/
+│   └── sbxup.config.yaml
+```
+
+Older locations keep working unchanged — `sbxup` searches `.sbx/sbxup.config.yaml`,
+`.sbx/sbxup.yaml`, `.agents/sbxup.yaml`, `.agents/sbx-runner.yaml`, `sbxup.yaml`, then
+`sbx-runner.yaml`, and uses the first one it finds:
 
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
 clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
+build:              # optional: build the template locally instead of pulling it
+  name: dotnet10
+  release: templates-v0.1.3
 ```
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
+
+## Run without Docker Hub
+
+Every push that touches `src/` publishes a **`templates-v{version}` GitHub Release** carrying the
+Dockerfiles themselves — each `<name>.Dockerfile`, a `manifest.json` catalogue, a
+`templates-{version}.tar.gz` of the whole `src/` tree, and a `.sha256` for each. `sbxup` can build
+from those directly, so no image is ever pulled from a registry:
+
+```bash
+sbxup --init          # lists the templates in the latest release, you pick one
+sbxup                 # builds it locally the first time, then reuses the image
+```
+
+`--init` writes a config with a `build:` block, which is what marks the template as locally built:
+
+```yaml
+template: sbx-claude-dotnet10:0.1.2
+agent: claude
+clone: false
+build:
+  name: dotnet10
+  release: templates-v0.1.3
+```
+
+Useful flags:
+
+```bash
+sbxup --build --template dotnet10   # build a template without editing the config first
+sbxup --rebuild                     # rebuild even though the image exists
+sbxup --update-claude               # rebuild only the Claude Code layer
+sbxup --refresh                     # re-download the manifest and Dockerfile
+sbxup --init --template dotnet10    # non-interactive; no prompt
+```
+
+Every downloaded asset is checksum-verified before it is written or built — a Dockerfile becomes the
+agent's execution environment, so a mismatch aborts and nothing is built. Downloads are cached under
+`~/.cache/sbxup/templates/<release>/` (`%LocalAppData%` on Windows).
+
+`--init` degrades rather than fails: with no network, no release, or a non-interactive stdin and no
+`--template`, it writes the standard registry config instead.
+
+**This is not an air-gapped build.** Nothing of *ours* is pulled from Docker Hub, but the base image
+`docker/sandbox-templates:claude-code`, apt, and the Claude Code install script are still fetched.
+
+To reproduce what CI would publish:
+
+```bash
+task templates:manifest   # print manifest.json
+task templates:stage      # stage the full asset set into ./staging
+```
 
 ## Build and push
 
@@ -112,7 +174,7 @@ task update-claude:python-uv         # Python + uv
 task update-claude                   # default image
 ```
 
-**Use the locally built image** — set `template` in `.agents\sbx-runner.yaml` to the local tag:
+**Use the locally built image** — set `template` in `.sbx\sbxup.config.yaml` to the local tag:
 
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest

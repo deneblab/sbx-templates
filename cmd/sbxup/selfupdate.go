@@ -15,10 +15,17 @@ import (
 )
 
 const (
-	repoAPI    = "https://api.github.com/repos/deneblab/sbx-templates/releases"
-	repoWeb    = "https://github.com/deneblab/sbx-templates/releases"
-	tagPrefix  = "sbxup-v"
-	httpClient = 60 * time.Second
+	// The repository publishes two independent release streams, told apart by tag prefix.
+	tagPrefix          = "sbxup-v"
+	templatesTagPrefix = "templates-v"
+	httpClient         = 60 * time.Second
+)
+
+// Endpoints are variables rather than constants so tests can point them at a local server;
+// nothing outside the tests reassigns them.
+var (
+	repoAPI = "https://api.github.com/repos/deneblab/sbx-templates/releases"
+	repoWeb = "https://github.com/deneblab/sbx-templates/releases"
 )
 
 // assetName is the release asset for the running platform, matching the names the release
@@ -35,9 +42,10 @@ type release struct {
 	TagName string `json:"tag_name"`
 }
 
-// latestRelease finds the newest release whose tag belongs to sbxup. The repository also
-// publishes Docker images, so /releases/latest is not necessarily an sbxup release.
-func latestRelease(client *http.Client) (string, error) {
+// latestRelease finds the newest release whose tag carries the given prefix. The repository
+// publishes both sbxup binaries (sbxup-v*) and template Dockerfiles (templates-v*), so
+// /releases/latest is not necessarily the stream the caller wants.
+func latestRelease(client *http.Client, prefix string) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, repoAPI+"?per_page=50", nil)
 	if err != nil {
 		return "", err
@@ -57,11 +65,11 @@ func latestRelease(client *http.Client) (string, error) {
 		return "", fmt.Errorf("cannot parse release list: %w", err)
 	}
 	for _, r := range releases {
-		if strings.HasPrefix(r.TagName, tagPrefix) {
+		if strings.HasPrefix(r.TagName, prefix) {
 			return r.TagName, nil
 		}
 	}
-	return "", fmt.Errorf("no %s* release found at %s", tagPrefix, repoWeb)
+	return "", fmt.Errorf("no %s* release found at %s", prefix, repoWeb)
 }
 
 func download(client *http.Client, url string) ([]byte, error) {
@@ -90,7 +98,7 @@ func parseChecksum(data []byte) (string, error) {
 func selfUpdate() error {
 	client := &http.Client{Timeout: httpClient}
 
-	tag, err := latestRelease(client)
+	tag, err := latestRelease(client, tagPrefix)
 	if err != nil {
 		return err
 	}

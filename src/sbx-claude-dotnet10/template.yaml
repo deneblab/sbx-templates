@@ -1,0 +1,5 @@
+# Metadata for the templates-v* release manifest. Adding a template means adding a
+# directory under src/ with a Dockerfile and one of these — nothing else to update.
+name: sbx-claude-dotnet10
+short: dotnet10
+description: .NET SDK 10.0

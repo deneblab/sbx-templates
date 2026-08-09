@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ const usage = `sbxup — launch and manage Claude Code sandboxes from sbxup.yaml
 
 Usage:
   sbxup                    Run sandbox using config defaults
-  sbxup --init             Create a default sbxup.yaml config
+  sbxup --init             Create sbxup.yaml — pick a template from the latest release
   sbxup --clone            Run on a private in-container git clone (overrides config)
   sbxup --no-clone         Disable clone mode (overrides config)
   sbxup --exec             Open a shell in the existing sandbox
@@ -30,35 +31,49 @@ Usage:
   sbxup --self-update      Update sbxup to the latest release
   sbxup --help             Show this help message
 
+Local templates (no Docker Hub):
+  sbxup --build            Build the configured template locally and run it
+  sbxup --rebuild          Rebuild even if the local image already exists
+  sbxup --update-claude    Rebuild only the Claude Code layer of the local image
+  sbxup --refresh          Re-download the template manifest and Dockerfile
+
 Parameters:
-  --config <path>    Path to YAML config (default: .agents/sbxup.yaml)
-  --template <img>   Docker image to use (overrides config)
+  --config <path>    Path to YAML config (default: .sbx/sbxup.config.yaml)
+  --template <img>   Docker image to use (overrides config); with --init or --build,
+                     a template name from the release, e.g. dotnet10
   --agent <name>     Agent name, e.g. claude (overrides config)
 
-Config file (.agents/sbxup.yaml):
+Config file (.sbx/sbxup.config.yaml; .agents/ locations still work):
   template: docker.io/pkudrel/sbx-claude-dotnet10:latest
   agent: claude
   clone: false        # optional: true => run on a private in-container git clone
   cache: .sbx-cache   # optional: mount local cache dir into sandbox
+  build:              # optional: build the template locally instead of pulling it
+    name: dotnet10
+    release: templates-v0.1.3
 
 Extra arguments are passed through to 'sbx run'.
 `
 
 type options struct {
-	config     string
-	template   string
-	agent      string
-	clone      bool
-	noClone    bool
-	exec       bool
-	status     bool
-	stop       bool
-	init       bool
-	dryRun     bool
-	version    bool
-	selfUpdate bool
-	help       bool
-	extra      []string
+	config       string
+	template     string
+	agent        string
+	clone        bool
+	noClone      bool
+	exec         bool
+	status       bool
+	stop         bool
+	init         bool
+	build        bool
+	rebuild      bool
+	updateClaude bool
+	refresh      bool
+	dryRun       bool
+	version      bool
+	selfUpdate   bool
+	help         bool
+	extra        []string
 }
 
 // parseArgs handles the POSIX-style --flags the PowerShell version had to reparse by hand.
@@ -82,6 +97,14 @@ func parseArgs(argv []string) (*options, error) {
 		switch strings.ToLower(arg) {
 		case "--init":
 			o.init = true
+		case "--build":
+			o.build = true
+		case "--rebuild":
+			o.rebuild = true
+		case "--update-claude":
+			o.updateClaude = true
+		case "--refresh":
+			o.refresh = true
 		case "--clone":
 			o.clone = true
 		case "--no-clone":
@@ -153,7 +176,7 @@ func run(argv []string) error {
 	case o.selfUpdate:
 		return selfUpdate()
 	case o.init:
-		return initConfig(o.config)
+		return initFlow(o)
 	}
 
 	// --- Resolve config -------------------------------------------------------
@@ -201,6 +224,16 @@ func run(argv []string) error {
 		return execCmd(candidate, o.dryRun)
 	}
 
+	// Local-build path. The built tag replaces whatever `template` resolved to, so the rest of
+	// the run is identical to the registry flow — `sbx run --template <tag>` either way.
+	if cfg.Build != nil || o.build || o.rebuild || o.updateClaude {
+		tag, err := ensureLocalTemplate(cfg, o)
+		if err != nil {
+			return err
+		}
+		template = tag
+	}
+
 	if template == "" {
 		return fmt.Errorf("template is required (set in %s or pass --template). "+
 			"Run 'sbxup --init' to create a default config.", configHint(cfgPath))
@@ -245,6 +278,95 @@ func run(argv []string) error {
 		return runSbx("run", "--name", existing)
 	}
 	return runSbx(args...)
+}
+
+// initFlow writes a config, preferring one wired to a template from the latest templates-v*
+// release. It degrades rather than fails: no network, no release, or a non-interactive stdin
+// with no --template all fall back to the static registry default, so scripted and offline
+// installs keep working exactly as before.
+func initFlow(o *options) error {
+	client := &http.Client{Timeout: httpClient}
+
+	// writeOut honours --dry-run on every exit path, including the fallbacks: a preview that
+	// creates the file it is previewing is worse than no preview at all.
+	writeOut := func(body string) error {
+		if o.dryRun {
+			path := o.config
+			if path == "" {
+				path = defaultConfigPath
+			}
+			fmt.Printf("[dry-run] would write %s:\n\n%s\n", path, body)
+			return nil
+		}
+		return initConfigBody(o.config, body)
+	}
+
+	release, err := resolveTemplatesRelease(client, "")
+	if err != nil {
+		warnf("Cannot reach the template releases (%v) — writing the default registry config.", err)
+		return writeOut(defaultConfigBody)
+	}
+	m, err := loadManifest(client, release, o.refresh)
+	if err != nil {
+		warnf("Cannot read the template manifest (%v) — writing the default registry config.", err)
+		return writeOut(defaultConfigBody)
+	}
+
+	var chosen *TemplateEntry
+	switch {
+	case o.template != "":
+		// An explicit name that does not exist is a mistake worth reporting, not something to
+		// paper over with a default the user did not ask for.
+		if chosen, err = findTemplate(m, o.template); err != nil {
+			return err
+		}
+	case interactive():
+		if chosen, err = pickTemplate(m, os.Stdin, os.Stdout); err != nil {
+			return err
+		}
+	default:
+		warnf("stdin is not a terminal and no --template was given — writing the default registry config.")
+		return writeOut(defaultConfigBody)
+	}
+
+	return writeOut(buildConfigBody(chosen, release))
+}
+
+// ensureLocalTemplate resolves the configured template from the release, builds it if needed,
+// and returns the local image tag to run.
+func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
+	name, pin := "", ""
+	if cfg.Build != nil {
+		name, pin = cfg.Build.Name, cfg.Build.Release
+	}
+	// With an explicit build flag, --template names a template rather than an image reference.
+	if o.template != "" && (o.build || o.rebuild || o.updateClaude) {
+		name = o.template
+	}
+	if name == "" {
+		return "", fmt.Errorf("no template to build: add a 'build:' block to %s or pass --template <name>",
+			defaultConfigPath)
+	}
+
+	client := &http.Client{Timeout: httpClient}
+	release, err := resolveTemplatesRelease(client, pin)
+	if err != nil {
+		return "", err
+	}
+	m, err := loadManifest(client, release, o.refresh)
+	if err != nil {
+		return "", err
+	}
+	entry, err := findTemplate(m, name)
+	if err != nil {
+		return "", err
+	}
+	dockerfile, err := fetchDockerfile(client, release, entry, o.refresh)
+	if err != nil {
+		return "", err
+	}
+	fmt.Printf("Template: %s %s (%s)\n", entry.Short, entry.Version, release)
+	return buildTemplate(dockerfile, entry, release, o.rebuild, o.updateClaude, o.dryRun)
 }
 
 func firstNonEmpty(vals ...string) string {

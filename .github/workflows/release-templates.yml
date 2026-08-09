@@ -1,0 +1,64 @@
+name: Release templates
+
+# Publishes the Dockerfiles themselves as a GitHub Release so `sbxup` can fetch, build and run
+# them locally — no Docker Hub pull required. Runs alongside build-push.yml, which keeps
+# publishing the prebuilt images to Docker Hub; the two share src/ and scripts/version.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/release/manifest.sh'
+      - 'scripts/version/version.sh'
+      - 'version.yaml'
+      - '.github/workflows/release-templates.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history is required for version calculation
+
+      - name: Compute version
+        id: version
+        run: |
+          VERSION=$(bash scripts/version/version.sh --version-only)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=templates-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using version: $VERSION"
+
+      # Same script `task templates:manifest` runs locally, so a contributor can reproduce the
+      # release contents exactly before pushing.
+      - name: Stage assets
+        run: bash scripts/release/manifest.sh --stage staging
+
+      - name: Show manifest
+        run: cat staging/manifest.json
+
+      # Written in `sha256sum` format (digest, two spaces, bare filename) so that both
+      # `sha256sum -c` and macOS's `shasum -a 256 -c` verify it unmodified, and so sbxup's
+      # existing parseChecksum() reads it without a second format. Generated from inside
+      # staging/ so the recorded name has no directory component.
+      - name: Generate checksums
+        working-directory: staging
+        run: |
+          for f in *; do
+            case "$f" in *.sha256) continue ;; esac
+            sha256sum "$f" > "$f.sha256"
+          done
+          cat ./*.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          files: staging/*
+          fail_on_unmatched_files: true

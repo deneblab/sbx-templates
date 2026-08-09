@@ -12,7 +12,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
 - **`scripts/version/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
-- **`cmd/sbxup/`** — Go source for `sbxup`, the cross-platform CLI that reads `.agents/sbxup.yaml` and calls `sbx run`. Single package; versioned by AbcVersion via `.abcversion.json`.
+- **`cmd/sbxup/`** — Go source for `sbxup`, the cross-platform CLI that reads `.sbx/sbxup.config.yaml` and calls `sbx run`. Single package; versioned by AbcVersion via `.abcversion.json`.
+- **`scripts/release/manifest.sh`** — assembles the `templates-v*` release manifest and stages its assets; called by both CI and `task templates:*`.
+- **`src/*/template.yaml`** — per-template metadata (name, short alias, description) that feeds `manifest.json`.
 - **`install.sh` / `install.ps1`** — one-line installers that fetch a checksum-verified `sbxup` binary from GitHub Releases.
 - **`shells/sbx-runner.ps1`** — **deprecated** PowerShell predecessor of `sbxup`; kept so existing setups keep working.
 - **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`, `sbxup:*`).
@@ -23,8 +25,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `sbxup` is a single binary for Linux, macOS, and Windows — no profile edits, no dot-sourcing.
 
 ```bash
-sbxup                # reads .agents/sbxup.yaml, launches sandbox
-sbxup --init         # create default .agents/sbxup.yaml
+sbxup                # reads .sbx/sbxup.config.yaml, launches sandbox
+sbxup --init         # create .sbx/sbxup.config.yaml (picks a template from the latest release)
 sbxup --dry-run      # preview without running
 sbxup --clone        # run on a private in-container git clone
 sbxup --self-update  # update to the latest release
@@ -39,20 +41,59 @@ curl -sSL https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.
 irm https://raw.githubusercontent.com/deneblab/sbx-templates/main/install.ps1 | iex       # Windows
 ```
 
-### sbxup.yaml
+### sbxup.config.yaml
+
+Lives at `.sbx/sbxup.config.yaml`:
+
+```
+project/
+├── .sbx/
+│   └── sbxup.config.yaml
+```
 
 ```yaml
 template: docker.io/pkudrel/sbx-claude-dotnet10:latest
 agent: claude
 clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
+build:              # optional: build the template locally instead of pulling it
+  name: dotnet10
+  release: templates-v0.1.3
 ```
 
-Config search order: `.agents/sbxup.yaml` → `.agents/sbx-runner.yaml` → `sbxup.yaml` → `sbx-runner.yaml`, so projects set up for the old PowerShell tool keep working unchanged.
+Config search order: `.sbx/sbxup.config.yaml` → `.sbx/sbxup.yaml` → `.agents/sbxup.yaml` → `.agents/sbx-runner.yaml` → `sbxup.yaml` → `sbx-runner.yaml`. The `.agents/` and `sbx-runner` names are kept so projects set up for earlier versions — including the old PowerShell tool — keep working unchanged.
 
 When `clone: true` (or `--clone`), `sbxup` passes `--clone` to `sbx run` so the agent works on a private in-container git clone of the host repo. Default is off; `--no-clone` forces it off. The removed `branch` key now warns with a hint to rename it to `clone`.
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace. If not set, no cache mounting occurs.
+
+## Local Templates Without Docker Hub
+
+Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)
+carrying each `<name>.Dockerfile`, a `manifest.json` catalogue built from `src/*/template.yaml`, a
+`templates-{version}.tar.gz` of `src/`, and a `.sha256` per asset. This stream is separate from
+`sbxup-v*`; `latestRelease(client, prefix)` selects between them.
+
+```bash
+sbxup --init                        # pick a template from the latest release
+sbxup                               # builds locally on first run, reuses the image after
+sbxup --build --template dotnet10   # build without editing the config
+sbxup --rebuild                     # force a rebuild
+sbxup --update-claude               # rebuild only the claude stage
+sbxup --refresh                     # re-download manifest + Dockerfile
+
+task templates:manifest             # print the manifest CI would publish
+task templates:stage                # stage the full asset set into ./staging
+```
+
+Assets are checksum-verified before use and cached at `os.UserCacheDir()/sbxup/templates/<release>/`.
+`buildTemplate` uses the same `VERSION` / `SHORT_SHA` / `BUILD_DATE` build-arg contract as
+`build-push.sh --no-push`, so a locally built image carries the same OCI labels as a published one.
+
+Whether `sbx run --template` can see a host-daemon image directly is undocumented and may vary by
+platform, so `ensureTemplate` asks `sbx template ls` first and only falls back to
+`docker image save` + `sbx template load` when the tag is absent. **Not yet verified on a host —
+`sbx` is not installed in the dev sandbox.**
 
 ## Local Docker Build (Taskfile)
 

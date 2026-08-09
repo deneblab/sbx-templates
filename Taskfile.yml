@@ -39,6 +39,18 @@ tasks:
     cmds:
       - abcversion -p semversion --project sbxup
 
+  # ── templates-v* release (Dockerfiles as release assets) ───────────────────
+
+  "templates:manifest":
+    desc: "Print the manifest.json the templates-v* release would publish"
+    cmds:
+      - bash scripts/release/manifest.sh
+
+  "templates:stage":
+    desc: "Stage the templates-v* release assets into ./staging (what CI uploads)"
+    cmds:
+      - bash scripts/release/manifest.sh --stage staging
+
   # ── Per-image shortcuts ────────────────────────────────────────────────────
 
   version:
