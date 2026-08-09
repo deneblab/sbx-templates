@@ -1,0 +1,238 @@
+version: '3'
+
+vars:
+  DEFAULT_IMAGE: dotnet10
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  # ── Tests ───────────────────────────────────────────────────────────────────
+
+  test:
+    desc: "Run all tests"
+    cmds:
+      - task: "test:version"
+      - task: "sbxup:test"
+
+  "test:version":
+    desc: "Run version script tests"
+    cmds:
+      - bash scripts/version/tests/version.sh.test.sh
+
+  # ── sbxup (Go CLI) ─────────────────────────────────────────────────────────
+
+  "sbxup:test":
+    desc: "Run sbxup Go tests"
+    cmds:
+      - go test ./cmd/sbxup/
+
+  "sbxup:build":
+    desc: "Build sbxup for the current platform into ./bin"
+    cmds:
+      - go build -trimpath -ldflags "-s -w -X main.version=$(abcversion -p semversion --project sbxup)" -o bin/sbxup ./cmd/sbxup
+
+  "sbxup:version":
+    desc: "Show computed semver for sbxup (via abcversion)"
+    cmds:
+      - abcversion -p semversion --project sbxup
+
+  # ── Per-image shortcuts ────────────────────────────────────────────────────
+
+  version:
+    desc: "Show computed semver for default image ({{.DEFAULT_IMAGE}})"
+    cmds:
+      - task: "version:{{.DEFAULT_IMAGE}}"
+
+  build:
+    desc: "Build default image ({{.DEFAULT_IMAGE}}) locally"
+    cmds:
+      - task: "build:{{.DEFAULT_IMAGE}}"
+
+  push:
+    desc: "Build and push default image ({{.DEFAULT_IMAGE}})"
+    cmds:
+      - task: "push:{{.DEFAULT_IMAGE}}"
+
+  update-claude:
+    desc: "Update Claude Code in default image ({{.DEFAULT_IMAGE}}) without rebuilding deps"
+    cmds:
+      - task: "update-claude:{{.DEFAULT_IMAGE}}"
+
+  # ── dotnet10 ───────────────────────────────────────────────────────────────
+
+  "version:dotnet10":
+    desc: "Show computed semver for sbx-claude-dotnet10"
+    cmds:
+      - task: "_version:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
+
+  "build:dotnet10":
+    desc: "Build sbx-claude-dotnet10 locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
+
+  "push:dotnet10":
+    desc: "Build and push sbx-claude-dotnet10"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
+
+  "update-claude:dotnet10":
+    desc: "Update Claude Code in sbx-claude-dotnet10 without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10 }
+
+  # ── dotnet10-node24 ────────────────────────────────────────────────────────
+
+  "version:dotnet10-node24":
+    desc: "Show computed semver for sbx-claude-dotnet10-node24"
+    cmds:
+      - task: "_version:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+
+  "build:dotnet10-node24":
+    desc: "Build sbx-claude-dotnet10-node24 locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+
+  "push:dotnet10-node24":
+    desc: "Build and push sbx-claude-dotnet10-node24"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+
+  "update-claude:dotnet10-node24":
+    desc: "Update Claude Code in sbx-claude-dotnet10-node24 without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+
+  # ── golang124-node24 ──────────────────────────────────────────────────────
+
+  "version:golang124-node24":
+    desc: "Show computed semver for sbx-claude-golang124-node24"
+    cmds:
+      - task: "_version:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang124-node24
+
+  "build:golang124-node24":
+    desc: "Build sbx-claude-golang124-node24 locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang124-node24
+
+  "push:golang124-node24":
+    desc: "Build and push sbx-claude-golang124-node24"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang124-node24
+
+  "update-claude:golang124-node24":
+    desc: "Update Claude Code in sbx-claude-golang124-node24 without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-golang124-node24
+
+  # ── python-uv ─────────────────────────────────────────────────────────────
+
+  "version:python-uv":
+    desc: "Show computed semver for sbx-claude-python-uv"
+    cmds:
+      - task: "_version:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  "build:python-uv":
+    desc: "Build sbx-claude-python-uv locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  "push:python-uv":
+    desc: "Build and push sbx-claude-python-uv"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  "update-claude:python-uv":
+    desc: "Update Claude Code in sbx-claude-python-uv without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-python-uv
+
+  # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
+
+  "_version:linux":
+    internal: true
+    cmds:
+      - bash scripts/version/version.sh --path "src/{{.IMAGE}}"
+
+  "_version:darwin":
+    internal: true
+    cmds:
+      - bash scripts/version/version.sh --path "src/{{.IMAGE}}"
+
+  "_build:linux":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push
+
+  "_build:darwin":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push
+
+  "_push:linux":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}"
+
+  "_push:darwin":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}"
+
+  "_update-claude:linux":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push --update-claude
+
+  "_update-claude:darwin":
+    internal: true
+    cmds:
+      - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push --update-claude
+
+  # ── Windows (PowerShell) ─────────────────────────────────────────────────
+
+  "_version:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/version/version.ps1 -Path "src/{{.IMAGE}}"
+
+  "_build:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}" -NoPush
+
+  "_push:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}"
+
+  "_update-claude:windows":
+    internal: true
+    cmds:
+      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build/build-push.ps1 -ImageName "{{.IMAGE}}" -NoPush -UpdateClaude

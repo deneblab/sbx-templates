@@ -1,0 +1,10 @@
+{
+  "BaseVersion": "0.1.0",
+  "Projects": {
+    "sbxup": {
+      "Name": "sbxup",
+      "Path": "cmd/sbxup",
+      "BaseVersion": "0.1.0"
+    }
+  }
+}

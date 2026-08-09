@@ -1,0 +1,88 @@
+name: Release sbxup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/sbxup/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.abcversion.json'
+      - '.github/workflows/release-sbxup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history is required for version calculation
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      # Native binary: no .NET SDK step needed. See deneblab/abcversion README.
+      - name: Install abcversion
+        run: |
+          curl -fsSL -o /usr/local/bin/abcversion \
+            https://github.com/deneblab/abcversion/releases/latest/download/abcversion-linux-x64
+          chmod +x /usr/local/bin/abcversion
+
+      - name: Compute version
+        id: version
+        run: |
+          VERSION=$(abcversion -p semversion --project sbxup)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=sbxup-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using version: $VERSION"
+
+      # CGO_ENABLED=0 keeps the binaries statically linked, so one Linux runner can build
+      # every target and the result runs on musl (Alpine) as well as glibc.
+      - name: Cross-compile
+        env:
+          CGO_ENABLED: '0'
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p staging
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            GOOS="${target%/*}"
+            GOARCH="${target#*/}"
+            name="sbxup-$GOOS-$GOARCH"
+            [ "$GOOS" = windows ] && name="$name.exe"
+            echo "Building $name"
+            GOOS="$GOOS" GOARCH="$GOARCH" go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=$VERSION" \
+              -o "staging/$name" ./cmd/sbxup
+          done
+          ls -l staging
+
+      # Written in `sha256sum` format (digest, two spaces, bare filename) so that both
+      # `sha256sum -c` and macOS's `shasum -a 256 -c` verify it unmodified. Generated from
+      # inside staging/ so the recorded name has no directory component.
+      - name: Generate checksums
+        working-directory: staging
+        run: |
+          for f in sbxup-*; do
+            case "$f" in *.sha256) continue ;; esac
+            sha256sum "$f" > "$f.sha256"
+          done
+          cat ./*.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          files: staging/*
+          fail_on_unmatched_files: true
