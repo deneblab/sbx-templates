@@ -67,6 +67,47 @@ var errDockerUnavailable = fmt.Errorf(
 	"Docker daemon not reachable — start Docker Desktop and retry.\n" +
 		"Docker is needed only to build or update a template; running an already-built one is not affected")
 
+// canonicalRef normalises an image reference the way a registry client would, so that the
+// short tag we build (`sbx-claude-dotnet10:0.1.3`) compares equal to the fully qualified
+// repository `sbx template ls` prints for it (`docker.io/library/sbx-claude-dotnet10`).
+func canonicalRef(repo, tag string) string {
+	if tag == "" {
+		// A digest or an embedded tag: split on the last colon that is not inside a host:port.
+		if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+			repo, tag = repo[:i], repo[i+1:]
+		} else {
+			tag = "latest"
+		}
+	}
+	switch parts := strings.Split(repo, "/"); {
+	case len(parts) == 1:
+		// Bare name: Docker Hub's official-images namespace.
+		repo = "docker.io/library/" + repo
+	case !strings.ContainsAny(parts[0], ".:") && parts[0] != "localhost":
+		// First component is a Hub user, not a registry host.
+		repo = "docker.io/" + repo
+	}
+	return repo + ":" + tag
+}
+
+// templateListedIn reports whether `sbx template ls` output contains tag. Split out from the
+// exec wrapper so the table parsing is testable — and because a substring match over the raw
+// output silently never matches: REPOSITORY and TAG are separate columns, so the `name:tag`
+// form we look for never appears in the text.
+func templateListedIn(out, tag string) bool {
+	want := canonicalRef(tag, "")
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] == "REPOSITORY" {
+			continue
+		}
+		if canonicalRef(fields[0], fields[1]) == want {
+			return true
+		}
+	}
+	return false
+}
+
 // sbxTemplateListed reports whether `sbx` can already see the tag as a template.
 //
 // The sandbox runtime keeps its own image store, separate from the host Docker daemon: `sbx`
@@ -78,7 +119,7 @@ var sbxTemplateListed = func(tag string) bool {
 	if err != nil && len(out) == 0 {
 		return false
 	}
-	return strings.Contains(string(out), tag)
+	return templateListedIn(string(out), tag)
 }
 
 // ensureTemplate makes tag usable as `sbx run --template tag`, importing it only if needed.

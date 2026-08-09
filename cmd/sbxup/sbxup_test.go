@@ -757,6 +757,41 @@ func TestBuildTemplateDoesNotNeedDockerForARegisteredTemplate(t *testing.T) {
 	}
 }
 
+// Verbatim `sbx template ls` output. REPOSITORY and TAG are separate columns and repositories
+// come back fully qualified, so a substring search for "name:tag" never matches — which made
+// sbxup rebuild a template it had just imported, and fail when Docker Desktop was closed.
+const sbxTemplateLsOutput = `REPOSITORY                                      TAG                  IMAGE ID       FLAVOR               CREATED
+docker.io/docker/sandbox-templates              claude-code-docker   a8531b2e5fc6   claude-code-docker   About a month ago
+docker.io/library/sbx-claude-dotnet10           0.1.3                b8140be92b47   claude-code          21 minutes ago
+docker.io/pkudrel/sbx-claude-dotnet10           latest               b5dd4d442761   claude-code          4 months ago
+docker.io/pkudrel/sbx-claude-python-uv          latest               606de2d7ff46   claude-code          About a month ago
+`
+
+func TestTemplateListedIn(t *testing.T) {
+	cases := []struct {
+		tag  string
+		want bool
+	}{
+		{"sbx-claude-dotnet10:0.1.3", true},                     // bare name => docker.io/library/
+		{"docker.io/library/sbx-claude-dotnet10:0.1.3", true},   // already canonical
+		{"pkudrel/sbx-claude-dotnet10:latest", true},            // Hub user, no registry host
+		{"docker.io/pkudrel/sbx-claude-python-uv:latest", true}, //
+		{"docker.io/pkudrel/sbx-claude-python-uv", true},        // implicit :latest
+		{"sbx-claude-dotnet10:0.1.4", false},                    // right name, wrong version
+		{"pkudrel/sbx-claude-dotnet10:0.1.3", false},            // right version, wrong namespace
+		{"sbx-claude-golang124-node24:0.1.3", false},            // absent entirely
+		{"REPOSITORY:TAG", false},                               // the header is not a template
+	}
+	for _, c := range cases {
+		if got := templateListedIn(sbxTemplateLsOutput, c.tag); got != c.want {
+			t.Errorf("templateListedIn(%q) = %v, want %v", c.tag, got, c.want)
+		}
+	}
+	if templateListedIn("", "sbx-claude-dotnet10:0.1.3") {
+		t.Error("empty output must not report a template as listed")
+	}
+}
+
 func TestBuildTemplateReportsAStoppedDaemon(t *testing.T) {
 	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Version: "0.1.3"}
 
