@@ -3,8 +3,9 @@
 #
 # Usage: ./scripts/release/manifest.sh [--stage DIR]
 #   (no args)      print manifest.json to stdout — used by `task templates:manifest` to validate
-#   --stage DIR    write manifest.json, <name>.Dockerfile for every template, and
-#                  templates-{version}.tar.gz of the whole src/ tree into DIR
+#   --stage DIR    write manifest.json and templates-{version}.tar.gz of the whole src/
+#                  tree into DIR — sbxup builds from the tarball, so the Dockerfiles are
+#                  not published individually (see schemaVersion 2 below)
 #
 # The manifest is built from src/*/template.yaml, so adding a template is adding a directory.
 # CI and the Taskfile both call this script; there is no second copy of the logic to drift.
@@ -99,7 +100,6 @@ for meta in src/*/template.yaml; do
       \"name\": \"$(json_escape "$name")\",
       \"short\": \"$(json_escape "$short")\",
       \"description\": \"$(json_escape "$description")\",
-      \"dockerfile\": \"$(json_escape "${name}.Dockerfile")\",
       \"version\": \"$(json_escape "$version")\",
       \"registryImage\": \"docker.io/pkudrel/$(json_escape "$name"):latest\"
     }"
@@ -110,8 +110,12 @@ if [ -z "$entries" ]; then
   exit 1
 fi
 
+# schemaVersion 2 means "the Dockerfiles ship only inside the tarball". sbxup 0.2.6+ builds
+# from the tarball and accepts it; older builds fetch <name>.Dockerfile as its own asset, and
+# refuse a schema they do not understand with a 'run sbxup --self-update' hint — which is a far
+# better failure than a 404 on an asset that is no longer published.
 MANIFEST="{
-  \"schemaVersion\": 1,
+  \"schemaVersion\": 2,
   \"release\": \"${RELEASE_TAG}\",
   \"version\": \"${RELEASE_VERSION}\",
   \"tarball\": \"${TARBALL}\",
@@ -126,15 +130,6 @@ fi
 
 mkdir -p "${STAGE}"
 printf '%s\n' "${MANIFEST}" > "${STAGE}/manifest.json"
-
-for meta in src/*/template.yaml; do
-  [ -e "$meta" ] || continue
-  base="$(basename "$(dirname "$meta")")"
-  cp "src/${base}/Dockerfile" "${STAGE}/${base}.Dockerfile"
-  # Normalise the mode: some working trees report 0755 for tracked 0644 files, and the
-  # release should not hand out Dockerfiles that look executable.
-  chmod 0644 "${STAGE}/${base}.Dockerfile"
-done
 
 # Reproducible-ish tarball: sorted entries, no owner/timestamp noise from the checkout.
 tar --sort=name --owner=0 --group=0 --numeric-owner -czf "${STAGE}/${TARBALL}" src

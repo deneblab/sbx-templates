@@ -166,9 +166,9 @@ func buildConfigBody(t *TemplateEntry, release string) string {
 agent: claude
 clone: false
 build:
-  name: %s          # built locally from %s — no Docker Hub pull
+  name: %s          # built locally from src/%s/Dockerfile in the release tarball
   release: %s
-`, t.LocalTag(), t.Short, t.Dockerfile, release)
+`, t.LocalTag(), t.Short, t.Name, release)
 }
 
 // initConfig writes the default starter config, refusing to clobber an existing one.

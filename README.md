@@ -92,9 +92,9 @@ When `cache` is set, the directory is created at the project root (if missing) a
 ## Run without Docker Hub
 
 Every push that touches `src/` publishes a **`templates-v{version}` GitHub Release** carrying the
-Dockerfiles themselves — a `manifest.json` catalogue, a `templates-{version}.tar.gz` of the whole
-`src/` tree, each `<name>.Dockerfile` individually, and a `.sha256` for each. `sbxup` builds from
-those directly, so no image is ever pulled from a registry:
+Dockerfiles themselves — a `manifest.json` catalogue and a `templates-{version}.tar.gz` of the whole
+`src/` tree, each with a `.sha256`. `sbxup` builds from those directly, so no image is ever pulled
+from a registry:
 
 ```bash
 sbxup --init          # lists the templates in the latest release, you pick one

@@ -379,6 +379,29 @@ func TestParseManifest(t *testing.T) {
 			t.Fatalf("err = %v, want a self-update hint", err)
 		}
 	})
+
+	// Schema 2 drops the per-template `dockerfile` field: the Dockerfiles ship only inside the
+	// tarball. Schema 1 manifests still parse — testManifest above carries the old field, and
+	// it is simply ignored — so a config pinned to an older release keeps working.
+	t.Run("schema 2 has no dockerfile field", func(t *testing.T) {
+		body := `{"schemaVersion":2,"release":"templates-v0.2.6","tarball":"templates-0.2.6.tar.gz",
+			"templates":[{"name":"sbx-claude-dotnet10","short":"dotnet10","version":"0.2.6"}]}`
+		m, err := parseManifest([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Tarball != "templates-0.2.6.tar.gz" || m.Templates[0].Short != "dotnet10" {
+			t.Fatalf("unexpected manifest: %+v", m)
+		}
+	})
+}
+
+// A manifest with no tarball is a broken release, not something to work around.
+func TestFetchDockerfileRejectsAManifestWithNoTarball(t *testing.T) {
+	_, err := fetchDockerfile(nil, "templates-v0.2.6", &Manifest{}, &TemplateEntry{Name: "x"}, false)
+	if err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("err = %v, want an incomplete-manifest error", err)
+	}
 }
 
 func TestFindTemplate(t *testing.T) {
@@ -622,10 +645,9 @@ build:
 func TestBuildConfigBodyRoundTrip(t *testing.T) {
 	chdir(t)
 	entry := TemplateEntry{
-		Name:       "sbx-claude-dotnet10",
-		Short:      "dotnet10",
-		Dockerfile: "sbx-claude-dotnet10.Dockerfile",
-		Version:    "0.1.2",
+		Name:    "sbx-claude-dotnet10",
+		Short:   "dotnet10",
+		Version: "0.1.2",
 	}
 	write(t, "c.yaml", buildConfigBody(&entry, "templates-v0.1.3"))
 
@@ -1036,8 +1058,8 @@ func TestFetchDockerfileUsesTheTarball(t *testing.T) {
 	hits := 0
 	srv := tarballServer(t, tarball, &hits)
 	m := &Manifest{Tarball: "templates-0.2.5.tar.gz"}
-	dotnet := &TemplateEntry{Name: "sbx-claude-dotnet10", Dockerfile: "sbx-claude-dotnet10.Dockerfile"}
-	python := &TemplateEntry{Name: "sbx-claude-python-uv", Dockerfile: "sbx-claude-python-uv.Dockerfile"}
+	dotnet := &TemplateEntry{Name: "sbx-claude-dotnet10"}
+	python := &TemplateEntry{Name: "sbx-claude-python-uv"}
 
 	path, err := fetchDockerfile(srv.Client(), "templates-v0.2.5", m, dotnet, false)
 	if err != nil {
@@ -1058,32 +1080,6 @@ func TestFetchDockerfileUsesTheTarball(t *testing.T) {
 	}
 	if hits != after {
 		t.Errorf("second template caused %d extra requests, want 0", hits-after)
-	}
-}
-
-func TestFetchDockerfileFallsBackWithoutATarball(t *testing.T) {
-	cacheHome(t)
-	const body = "FROM legacy\n"
-	digest := sha256.Sum256([]byte(body))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, ".sha256") {
-			fmt.Fprintf(w, "%s  x.Dockerfile\n", hex.EncodeToString(digest[:]))
-			return
-		}
-		fmt.Fprint(w, body)
-	}))
-	orig := repoWeb
-	repoWeb = srv.URL
-	t.Cleanup(func() { repoWeb = orig; srv.Close() })
-
-	m := &Manifest{} // pre-tarball manifest
-	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Dockerfile: "x.Dockerfile"}
-	path, err := fetchDockerfile(srv.Client(), "templates-v0.1.3", m, entry, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := os.ReadFile(path); string(got) != body {
-		t.Errorf("Dockerfile = %q", got)
 	}
 }
 

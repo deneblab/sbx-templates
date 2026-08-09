@@ -69,8 +69,8 @@ When `cache` is set, the directory is created at the project root (if missing) a
 ## Local Templates Without Docker Hub
 
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)
-carrying each `<name>.Dockerfile`, a `manifest.json` catalogue built from `src/*/template.yaml`, a
-`templates-{version}.tar.gz` of `src/`, and a `.sha256` per asset. This stream is separate from
+carrying two assets and a `.sha256` for each: a `manifest.json` catalogue built from
+`src/*/template.yaml`, and a `templates-{version}.tar.gz` of `src/`. This stream is separate from
 `sbxup-v*`; `latestRelease(client, prefix)` selects between them.
 
 ```bash
@@ -102,9 +102,14 @@ link or path escaping the destination aborts the extraction rather than being sa
 lands in a sibling temp directory that is swapped in by rename, so an interrupted run cannot leave a
 half-populated tree for a later run to build from.
 
-**Keep publishing the per-template `<name>.Dockerfile` assets.** Every `sbxup` released before this
-change fetches them, and `fetchDockerfileAsset` remains the fallback for a manifest with no
-`tarball` field. Dropping them from the release would break already-installed binaries.
+**`schemaVersion` is the compatibility signal.** Schema 1 releases also shipped each
+`<name>.Dockerfile` as its own asset; schema 2 ships them only inside the tarball and omits the
+per-entry `dockerfile` field. An `sbxup` older than 0.2.6 fetches that asset, so it must not
+silently 404 on a schema-2 release — `parseManifest` refuses any `schemaVersion` above what the
+build understands and tells the user to run `sbxup --self-update`. Bump `manifestSchema` in
+lockstep whenever the published manifest changes shape. Schema 1 releases still work unchanged —
+every one of them also published a tarball, so the same code path serves them and their unused
+`dockerfile` field is simply ignored.
 
 **The sandbox runtime keeps its own image store, separate from the host Docker daemon.** Confirmed on
 Windows: `sbx` runs sandboxes with Docker Desktop closed, while `docker build` fails against

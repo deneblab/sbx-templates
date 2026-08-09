@@ -1,8 +1,8 @@
 package main
 
-// Template distribution without a registry: this repository publishes its Dockerfiles as
-// `templates-v*` GitHub Release assets. sbxup fetches the manifest, lets the user pick an
-// entry, downloads that single Dockerfile and builds it locally (see build.go). Nothing here
+// Template distribution without a registry: this repository publishes its Dockerfiles inside a
+// `templates-v*` GitHub Release tarball. sbxup fetches the manifest, lets the user pick an entry,
+// extracts the tarball once and builds locally from it (see tarball.go, build.go). Nothing here
 // pulls a prebuilt image, and no template list is hardcoded — the manifest is the catalogue.
 
 import (
@@ -24,7 +24,6 @@ type TemplateEntry struct {
 	Name          string `json:"name"`
 	Short         string `json:"short"`
 	Description   string `json:"description"`
-	Dockerfile    string `json:"dockerfile"`
 	Version       string `json:"version"`
 	RegistryImage string `json:"registryImage"`
 }
@@ -51,7 +50,13 @@ type Manifest struct {
 // manifestSchema is the schema version this build understands. A newer manifest is reported
 // rather than silently misread, since the failure would otherwise surface as a confusing
 // "template not found".
-const manifestSchema = 1
+// 1 — every template also shipped as its own <name>.Dockerfile asset, named by a `dockerfile`
+// field on each entry. Those releases are still downloadable and still parse: the field is
+// simply ignored, and their tarball is what gets used.
+// 2 — the release carries only manifest.json and the tarball. A build older than 0.2.6 looks
+// for the per-template asset, so it refuses this manifest outright with a self-update hint
+// rather than 404ing on something the release no longer publishes.
+const manifestSchema = 2
 
 func parseManifest(data []byte) (*Manifest, error) {
 	var m Manifest
@@ -195,15 +200,12 @@ func loadManifest(client *http.Client, tag string, refresh bool) (*Manifest, err
 	return m, nil
 }
 
-// fetchDockerfile returns the on-disk path of a template's Dockerfile.
-//
-// The release tarball is the normal source: one verified download makes every template in the
-// release available, so switching templates later costs nothing and works offline. A manifest
-// without a `tarball` field falls back to fetching that one Dockerfile as its own asset, which
-// is how releases before the tarball became load-bearing keep working.
+// fetchDockerfile returns the on-disk path of a template's Dockerfile, extracted from the
+// release tarball. One verified download makes every template in the release available, so
+// switching templates later costs nothing and works offline.
 func fetchDockerfile(client *http.Client, tag string, m *Manifest, t *TemplateEntry, refresh bool) (string, error) {
 	if m.Tarball == "" {
-		return fetchDockerfileAsset(client, tag, t, refresh)
+		return "", fmt.Errorf("%s publishes no tarball — the manifest is incomplete", tag)
 	}
 	tree, err := ensureTemplateTree(client, tag, m, refresh)
 	if err != nil {
@@ -212,30 +214,6 @@ func fetchDockerfile(client *http.Client, tag string, m *Manifest, t *TemplateEn
 	path := filepath.Join(tree, t.Name, "Dockerfile")
 	if _, err := os.Stat(path); err != nil {
 		return "", fmt.Errorf("%s has no %s/Dockerfile inside %s", tag, t.Name, m.Tarball)
-	}
-	return path, nil
-}
-
-// fetchDockerfileAsset downloads and verifies a single <name>.Dockerfile release asset.
-func fetchDockerfileAsset(client *http.Client, tag string, t *TemplateEntry, refresh bool) (string, error) {
-	dir, err := templatesCacheDir(tag)
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, t.Dockerfile)
-
-	if !refresh {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-
-	data, err := fetchVerified(client, tag, t.Dockerfile)
-	if err != nil {
-		return "", err
-	}
-	if err := writeCache(path, data); err != nil {
-		return "", fmt.Errorf("cannot cache %s: %w", t.Dockerfile, err)
 	}
 	return path, nil
 }
