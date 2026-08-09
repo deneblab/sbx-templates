@@ -90,10 +90,18 @@ Assets are checksum-verified before use and cached at `os.UserCacheDir()/sbxup/t
 `buildTemplate` uses the same `VERSION` / `SHORT_SHA` / `BUILD_DATE` build-arg contract as
 `build-push.sh --no-push`, so a locally built image carries the same OCI labels as a published one.
 
-Whether `sbx run --template` can see a host-daemon image directly is undocumented and may vary by
-platform, so `ensureTemplate` asks `sbx template ls` first and only falls back to
-`docker image save` + `sbx template load` when the tag is absent. **Not yet verified on a host —
-`sbx` is not installed in the dev sandbox.**
+**The sandbox runtime keeps its own image store, separate from the host Docker daemon.** Confirmed on
+Windows: `sbx` runs sandboxes with Docker Desktop closed, while `docker build` fails against
+`npipe:////./pipe/dockerDesktopLinuxEngine`. So a locally built image must be imported —
+`ensureTemplate` does `docker image save` + `sbx template load` when `sbx template ls` does not
+already list the tag.
+
+Consequence for the order of checks: **`sbx template ls` is asked first, always.** It answers without
+a Docker daemon, so an already-registered template needs neither Docker nor the network. Asking
+`docker image inspect` first would make a stopped Docker Desktop look like "never built" and trigger a
+rebuild that cannot succeed. Docker is required only to build or update a template
+(`--rebuild`, `--update-claude`, or a first run); `dockerAvailable()` is checked before building so
+the user gets an actionable message instead of a raw npipe/socket error.
 
 ## Local Docker Build (Taskfile)
 

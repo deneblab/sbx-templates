@@ -1,8 +1,11 @@
 name: Build and Push Docker Image
 
+# DISABLED — manual only. Templates are distributed as Dockerfiles via the templates-v*
+# release (release-templates.yml) and built locally by `sbxup`, so publishing prebuilt images
+# to Docker Hub is no longer part of the normal flow. The push trigger is removed rather than
+# the workflow deleted: re-adding `push: {branches: [main]}` restores the old behaviour, and
+# "Run workflow" still publishes on demand.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 # Images are pushed to Docker Hub with DOCKER_TOKEN, not GITHUB_TOKEN, so this

@@ -13,6 +13,11 @@ Deneblab sandbox templates for Claude Code development environments.
 
 All images extend `docker/sandbox-templates:claude-code`.
 
+> **Docker Hub publishing is no longer automatic.** Templates are distributed as Dockerfiles via the
+> `templates-v*` release and built locally by `sbxup` — see
+> [Run without Docker Hub](#run-without-docker-hub). The images above still exist but are frozen at
+> their last build; `build-push.yml` now runs only when triggered by hand.
+
 ## Run a sandbox
 
 ### Option A — sbxup (recommended)
@@ -122,6 +127,12 @@ Every downloaded asset is checksum-verified before it is written or built — a 
 agent's execution environment, so a mismatch aborts and nothing is built. Downloads are cached under
 `~/.cache/sbxup/templates/<release>/` (`%LocalAppData%` on Windows).
 
+**Docker Desktop is only needed to build.** The sandbox runtime has its own image store, so once a
+template is registered, `sbxup` reuses it without touching Docker or the network — `sbx template ls`
+is checked first, and it answers with Docker Desktop closed. You need Docker running for a first
+build, `--rebuild`, or `--update-claude`; if it is not, sbxup says so instead of failing inside the
+builder.
+
 `--init` degrades rather than fails: with no network, no release, or a non-interactive stdin and no
 `--template`, it writes the standard registry config instead.
 
@@ -152,7 +163,10 @@ task build:python-uv           # build sbx-claude-python-uv
 
 Docker Hub secrets required: `DOCKER_USERNAME`, `DOCKER_TOKEN`.
 
-GitHub Actions workflow (`.github/workflows/build-push.yml`) triggers on push to `main`.
+`.github/workflows/build-push.yml` is **manual-only** — it no longer runs on push to `main`. Publish
+with "Run workflow" in the Actions tab when you actually want to refresh the Docker Hub images, or
+re-add a `push:` trigger to restore the old behaviour. Note it only ever built
+`sbx-claude-dotnet10`; the other three images were never published by CI.
 
 ## Updating Claude Code locally
 

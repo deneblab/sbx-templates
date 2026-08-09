@@ -50,18 +50,29 @@ func runTool(name string, args ...string) error {
 	return cmd.Run()
 }
 
-// dockerImageExists reports whether the tag is already in the local Docker daemon, which is
-// what makes a second `sbxup` run reuse the image instead of rebuilding it.
+// dockerImageExists reports whether the tag is already in the local Docker daemon. It needs a
+// running daemon to answer, so it must never be the first question asked — see buildTemplate.
 var dockerImageExists = func(tag string) bool {
 	return exec.Command("docker", "image", "inspect", tag).Run() == nil
 }
 
+// dockerAvailable reports whether a Docker daemon is reachable. Checked before a build so the
+// user gets an actionable message instead of a raw npipe/socket error from the builder.
+var dockerAvailable = func() bool {
+	return exec.Command("docker", "version", "--format", "{{.Server.Version}}").Run() == nil
+}
+
+// errDockerUnavailable explains the one situation that genuinely needs Docker running.
+var errDockerUnavailable = fmt.Errorf(
+	"Docker daemon not reachable — start Docker Desktop and retry.\n" +
+		"Docker is needed only to build or update a template; running an already-built one is not affected")
+
 // sbxTemplateListed reports whether `sbx` can already see the tag as a template.
 //
-// Whether a locally built image is visible to `sbx` without an explicit import depends on
-// whether the sandbox runtime shares the host daemon's image store — undocumented, and it may
-// differ by platform. Rather than assume either way, ask: if the tag is listed, the build is
-// done; if not, import it. Correct under both behaviours, and costs one cheap list call.
+// The sandbox runtime keeps its own image store, separate from the host Docker daemon: `sbx`
+// runs sandboxes with Docker Desktop closed, while `docker build` cannot. So this is the
+// authoritative "is it ready to run?" check, and — unlike dockerImageExists — it answers
+// without a Docker daemon. Everything else keys off it.
 var sbxTemplateListed = func(tag string) bool {
 	out, err := exec.Command("sbx", "template", "ls").CombinedOutput()
 	if err != nil && len(out) == 0 {
@@ -106,9 +117,24 @@ func ensureTemplate(tag string, dryRun bool) error {
 func buildTemplate(dockerfile string, t *TemplateEntry, release string, force, updateClaude, dryRun bool) (string, error) {
 	tag := t.LocalTag()
 
-	if !force && !updateClaude && !dryRun && dockerImageExists(tag) {
-		fmt.Printf("Reusing local image: %s\n", tag)
-		return tag, ensureTemplate(tag, dryRun)
+	if !force && !updateClaude && !dryRun {
+		// Ask `sbx` first: it answers without a Docker daemon, and a template already in its
+		// store is ready to run. Asking Docker first would make a stopped Docker Desktop look
+		// like "never built" and trigger a doomed rebuild.
+		if sbxTemplateListed(tag) {
+			fmt.Printf("Reusing template: %s\n", tag)
+			return tag, nil
+		}
+		// Built earlier but not imported into the sandbox runtime: importing needs Docker,
+		// because the image has to be exported from the daemon that holds it.
+		if dockerAvailable() && dockerImageExists(tag) {
+			fmt.Printf("Reusing local image: %s\n", tag)
+			return tag, ensureTemplate(tag, dryRun)
+		}
+	}
+
+	if !dryRun && !dockerAvailable() {
+		return "", errDockerUnavailable
 	}
 
 	// The cache directory holds only Dockerfiles, which makes it a deliberately minimal build

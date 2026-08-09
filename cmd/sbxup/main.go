@@ -361,11 +361,20 @@ func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("Template: %s %s (%s)\n", entry.Short, entry.Version, release)
+
+	// Already in the sandbox runtime's store: nothing to download and nothing to build, so
+	// neither the network nor Docker is touched on the common repeat run.
+	tag := entry.LocalTag()
+	if !o.rebuild && !o.updateClaude && !o.refresh && !o.dryRun && sbxTemplateListed(tag) {
+		fmt.Printf("Reusing template: %s\n", tag)
+		return tag, nil
+	}
+
 	dockerfile, err := fetchDockerfile(client, release, entry, o.refresh)
 	if err != nil {
 		return "", err
 	}
-	fmt.Printf("Template: %s %s (%s)\n", entry.Short, entry.Version, release)
 	return buildTemplate(dockerfile, entry, release, o.rebuild, o.updateClaude, o.dryRun)
 }
 

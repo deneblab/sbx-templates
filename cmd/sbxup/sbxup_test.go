@@ -735,3 +735,47 @@ func TestInitFlowDryRunWritesNothing(t *testing.T) {
 		t.Fatalf("config was not written: %v", err)
 	}
 }
+
+func TestBuildTemplateDoesNotNeedDockerForARegisteredTemplate(t *testing.T) {
+	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Short: "dotnet10", Version: "0.1.3"}
+
+	origListed, origAvail, origExists := sbxTemplateListed, dockerAvailable, dockerImageExists
+	t.Cleanup(func() {
+		sbxTemplateListed, dockerAvailable, dockerImageExists = origListed, origAvail, origExists
+	})
+
+	// `sbx` already has it; Docker must not be consulted at all — that is the whole point,
+	// since the sandbox runtime runs it with Docker Desktop closed.
+	sbxTemplateListed = func(string) bool { return true }
+	dockerAvailable = func() bool { t.Fatal("dockerAvailable called for an already-registered template"); return false }
+	dockerImageExists = func(string) bool {
+		t.Fatal("dockerImageExists called for an already-registered template")
+		return false
+	}
+
+	tag, err := buildTemplate("/cache/x.Dockerfile", entry, "templates-v0.1.4", false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag != "sbx-claude-dotnet10:0.1.3" {
+		t.Errorf("tag = %q", tag)
+	}
+}
+
+func TestBuildTemplateReportsAStoppedDaemon(t *testing.T) {
+	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Version: "0.1.3"}
+
+	origListed, origAvail := sbxTemplateListed, dockerAvailable
+	t.Cleanup(func() { sbxTemplateListed, dockerAvailable = origListed, origAvail })
+
+	sbxTemplateListed = func(string) bool { return false } // not built yet
+	dockerAvailable = func() bool { return false }         // Docker Desktop is closed
+
+	_, err := buildTemplate("/cache/x.Dockerfile", entry, "templates-v0.1.4", false, false, false)
+	if err == nil {
+		t.Fatal("expected an error when a build is required and Docker is unreachable")
+	}
+	if !strings.Contains(err.Error(), "Docker Desktop") {
+		t.Errorf("err = %v, want an actionable Docker Desktop message", err)
+	}
+}
