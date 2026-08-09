@@ -225,9 +225,6 @@ installs the native binary directly (no .NET SDK). Get it from
 If a single template ever needs its own `BaseVersion` — a deliberate minor bump for one image —
 give that one a `Projects` entry and point its call at `--project` instead; the two styles coexist.
 
-`docs/abcversion-path-vs-project.md` compares the three scoping flags, records the measurements
-behind the choice, and lists the failure modes (all of which exit non-zero).
-
 ## Building sbxup
 
 ```bash
