@@ -214,26 +214,34 @@ with a `.sha256` sidecar, and tags the release `sbxup-v{version}`.
 
 ## Versioning
 
-**Docker images** are versioned from `version.yaml` + git commit count:
+Everything is versioned with [AbcVersion](https://github.com/deneblab/AbcVersion) from
+`.abcversion.json`. Each project is a path, and its version is `BaseVersion` plus the number of
+commits touching that path — so a release is cut only when the code behind it actually changed:
 
-```yaml
-# version.yaml
-baseVersion: 0.1.0
-baseCommitSha: abc1234   # optional — count commits only after this SHA
+```json
+{
+  "BaseVersion": "0.2.0",
+  "Projects": {
+    "sbxup":     { "Name": "sbxup",     "Path": "cmd/sbxup", "BaseVersion": "0.2.0" },
+    "templates": { "Name": "templates", "Path": "src",       "BaseVersion": "0.2.0" },
+    "dotnet10":  { "Name": "dotnet10",  "Path": "src/sbx-claude-dotnet10", "BaseVersion": "0.2.0" }
+  }
+}
 ```
 
 ```bash
-bash scripts/version/version.sh --version-only   # e.g. 0.1.5
-pwsh scripts/version/version.ps1 -VersionOnly
+abcversion -p semversion --project sbxup       # the sbxup-v* release
+abcversion -p semversion --project templates   # the templates-v* release
+abcversion -p semversion --project dotnet10    # one template's image tag
 ```
 
-**sbxup** is versioned with [AbcVersion](https://github.com/deneblab/AbcVersion) from
-`.abcversion.json`, scoped to the `cmd/sbxup` path so a runner release is cut only when runner
-source changes:
+Each template has its own project, keyed by its `short` name, so an unchanged template keeps its
+version across a release and `sbxup` reuses the image you already built. Adding a template means
+adding a `Projects` entry alongside its `src/` directory.
 
-```bash
-abcversion -p semversion --project sbxup
-```
+`abcversion` needs to be on `PATH` for `task build:*`, `task version:*` and the release scripts —
+grab the native binary from
+[releases](https://github.com/deneblab/abcversion/releases/latest).
 
 ## Merge agent changes
 

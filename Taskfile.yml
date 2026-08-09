@@ -14,13 +14,7 @@ tasks:
   test:
     desc: "Run all tests"
     cmds:
-      - task: "test:version"
       - task: "sbxup:test"
-
-  "test:version":
-    desc: "Run version script tests"
-    cmds:
-      - bash scripts/version/tests/version.sh.test.sh
 
   # ── sbxup (Go CLI) ─────────────────────────────────────────────────────────
 
@@ -37,9 +31,16 @@ tasks:
   "sbxup:version":
     desc: "Show computed semver for sbxup (via abcversion)"
     cmds:
-      - abcversion -p semversion --project sbxup
+      - task: "_version"
+        vars: { PROJECT: sbxup }
 
   # ── templates-v* release (Dockerfiles as release assets) ───────────────────
+
+  "templates:version":
+    desc: "Show the version the next templates-v* release would carry"
+    cmds:
+      - task: "_version"
+        vars: { PROJECT: templates }
 
   "templates:manifest":
     desc: "Print the manifest.json the templates-v* release would publish"
@@ -78,8 +79,8 @@ tasks:
   "version:dotnet10":
     desc: "Show computed semver for sbx-claude-dotnet10"
     cmds:
-      - task: "_version:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10 }
+      - task: "_version"
+        vars: { PROJECT: dotnet10 }
 
   "build:dotnet10":
     desc: "Build sbx-claude-dotnet10 locally"
@@ -104,8 +105,8 @@ tasks:
   "version:dotnet10-node24":
     desc: "Show computed semver for sbx-claude-dotnet10-node24"
     cmds:
-      - task: "_version:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+      - task: "_version"
+        vars: { PROJECT: dotnet10-node24 }
 
   "build:dotnet10-node24":
     desc: "Build sbx-claude-dotnet10-node24 locally"
@@ -130,9 +131,8 @@ tasks:
   "version:golang124-node24":
     desc: "Show computed semver for sbx-claude-golang124-node24"
     cmds:
-      - task: "_version:{{OS}}"
-        vars:
-          IMAGE: sbx-claude-golang124-node24
+      - task: "_version"
+        vars: { PROJECT: golang124-node24 }
 
   "build:golang124-node24":
     desc: "Build sbx-claude-golang124-node24 locally"
@@ -160,9 +160,8 @@ tasks:
   "version:python-uv":
     desc: "Show computed semver for sbx-claude-python-uv"
     cmds:
-      - task: "_version:{{OS}}"
-        vars:
-          IMAGE: sbx-claude-python-uv
+      - task: "_version"
+        vars: { PROJECT: python-uv }
 
   "build:python-uv":
     desc: "Build sbx-claude-python-uv locally"
@@ -185,17 +184,14 @@ tasks:
         vars:
           IMAGE: sbx-claude-python-uv
 
+  # ── Versioning (abcversion, one binary on every OS) ───────────────────────
+
+  "_version":
+    internal: true
+    cmds:
+      - abcversion -p semversion --project "{{.PROJECT}}"
+
   # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
-
-  "_version:linux":
-    internal: true
-    cmds:
-      - bash scripts/version/version.sh --path "src/{{.IMAGE}}"
-
-  "_version:darwin":
-    internal: true
-    cmds:
-      - bash scripts/version/version.sh --path "src/{{.IMAGE}}"
 
   "_build:linux":
     internal: true
@@ -228,11 +224,6 @@ tasks:
       - bash scripts/build/build-push.sh --image "{{.IMAGE}}" --no-push --update-claude
 
   # ── Windows (PowerShell) ─────────────────────────────────────────────────
-
-  "_version:windows":
-    internal: true
-    cmds:
-      - pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/version/version.ps1 -Path "src/{{.IMAGE}}"
 
   "_build:windows":
     internal: true

@@ -26,8 +26,27 @@ done
 
 CONTEXT="${REPO_ROOT}/src/${IMAGE_NAME}"
 
-# Compute version scoped to this image's directory
-eval "$(bash "${REPO_ROOT}/scripts/version/version.sh" --path "src/${IMAGE_NAME}")"
+if ! command -v abcversion >/dev/null 2>&1; then
+  echo "Error: abcversion not found on PATH — install it from" >&2
+  echo "  https://github.com/deneblab/abcversion/releases/latest" >&2
+  exit 1
+fi
+
+# Version scoped to this image's directory. AbcVersion keys that scoping on a named project
+# (see .abcversion.json), and the project name is the template's `short` — the same name the
+# Taskfile and the release manifest use.
+PROJECT="$(grep -E '^short:' "${CONTEXT}/template.yaml" 2>/dev/null | head -1 \
+  | sed -e 's/^short:[[:space:]]*//' -e 's/[[:space:]]*$//')"
+[ -z "${PROJECT}" ] && PROJECT="${IMAGE_NAME}"
+
+if ! version="$(abcversion -p semversion --project "${PROJECT}" 2>/dev/null)"; then
+  echo "Error: no '${PROJECT}' project in .abcversion.json" >&2
+  echo "  add: \"${PROJECT}\": { \"Name\": \"${PROJECT}\", \"Path\": \"src/${IMAGE_NAME}\", \"BaseVersion\": \"0.2.0\" }" >&2
+  exit 1
+fi
+tag="v${version}"
+short_sha="$(git -C "${REPO_ROOT}" rev-parse --short=7 HEAD)"
+build_date_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 IMAGE="docker.io/pkudrel/${IMAGE_NAME}"
 

@@ -19,17 +19,30 @@ $RepoRoot   = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 $Image      = "docker.io/pkudrel/$ImageName"
 $Context    = (Resolve-Path (Join-Path $RepoRoot "src\$ImageName")).Path
 
-# Compute version scoped to this image's directory
-$lines = & (Join-Path $RepoRoot "scripts/version/version.ps1") -Path "src/$ImageName"
-$data  = @{}
-foreach ($line in $lines) {
-    if ($line -match '^(\w+)=(.+)$') { $data[$Matches[1]] = $Matches[2] }
+if (-not (Get-Command abcversion -ErrorAction SilentlyContinue)) {
+    Write-Error "abcversion not found on PATH - install it from https://github.com/deneblab/abcversion/releases/latest"
+    exit 1
 }
 
-$version   = $data['version']
-$tag       = $data['tag']
-$shortSha  = $data['short_sha']
-$buildDate = $data['build_date_utc']
+# Version scoped to this image's directory. AbcVersion keys that scoping on a named project
+# (see .abcversion.json), and the project name is the template's `short` — the same name the
+# Taskfile and the release manifest use.
+$meta    = Join-Path $Context "template.yaml"
+$project = $ImageName
+if (Test-Path $meta) {
+    $shortLine = Select-String -Path $meta -Pattern '^short:\s*(.+?)\s*$' | Select-Object -First 1
+    if ($shortLine) { $project = $shortLine.Matches[0].Groups[1].Value }
+}
+
+$version = & abcversion -p semversion --project $project 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $version) {
+    Write-Error "No '$project' project in .abcversion.json - add { `"Name`": `"$project`", `"Path`": `"src/$ImageName`", `"BaseVersion`": `"0.2.0`" }"
+    exit 1
+}
+
+$tag       = "v$version"
+$shortSha  = (& git -C $RepoRoot rev-parse --short=7 HEAD).Trim()
+$buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
 
 $pushFlag     = if ($NoPush) { "--load" } else { "--push" }
 $noCacheArgs  = if ($UpdateClaude) { @("--no-cache-filter", "claude") } else { @() }

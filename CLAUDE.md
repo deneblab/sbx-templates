@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-golang124-node24/Dockerfile`** — Go 1.24.2 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
-- **`scripts/version/version.sh` / `version.ps1`** — compute semver from `version.yaml` + git commit count.
+- **`.abcversion.json`** — one AbcVersion project per versioned path (`cmd/sbxup`, `src`, and each `src/sbx-claude-*`); see "Versioning".
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
 - **`cmd/sbxup/`** — Go source for `sbxup`, the cross-platform CLI that reads `.sbx/sbxup.config.yaml` and calls `sbx run`. Single package; versioned by AbcVersion via `.abcversion.json`.
 - **`scripts/release/manifest.sh`** — assembles the `templates-v*` release manifest and stages its assets; called by both CI and `task templates:*`.
@@ -167,25 +167,34 @@ The image tag is the same whether built locally or pushed — `sbxup` picks it u
 
 ## Versioning
 
+Everything is versioned by [AbcVersion](https://github.com/deneblab/AbcVersion) from
+`.abcversion.json` — one system, one binary, same behaviour on every OS. A version is
+`BaseVersion` plus the number of commits touching that project's `Path`:
+
 ```bash
-scripts/version/version.sh --version-only        # e.g. 0.1.5
-pwsh scripts/version/version.ps1 -VersionOnly
+abcversion -p semversion --project sbxup       # or: task sbxup:version
+abcversion -p semversion --project templates   # or: task templates:version
+abcversion -p semversion --project dotnet10    # or: task version:dotnet10
 ```
 
-`version.yaml` format:
-```yaml
-baseVersion: 0.1.0
-baseCommitSha: abc1234   # optional — count commits after this SHA
-```
+| Project | Path | Versions |
+|---|---|---|
+| `sbxup` | `cmd/sbxup` | the `sbxup-v*` release |
+| `templates` | `src` | the `templates-v*` release and its tarball |
+| `dotnet10`, `dotnet10-node24`, `golang124-node24`, `python-uv` | `src/sbx-claude-*` | that one template's image tag and manifest entry |
 
-Two versioning systems coexist deliberately:
+**Adding a template means adding a `Projects` entry too.** AbcVersion scopes commit counting by
+`Projects[].Path` and its own `--path` flag selects the *repository*, not a subtree, so per-template
+versions cannot be derived on the fly. The key is the template's `short` name — that is what
+`manifest.sh` and `build-push.sh` look up. A missing entry fails the build with an actionable
+message rather than silently falling back to a repo-wide number.
 
-- **Docker images** — `version.yaml` + `scripts/version/version.sh` (above).
-- **`sbxup`** — [AbcVersion](https://github.com/deneblab/AbcVersion) via `.abcversion.json`, scoped to the `cmd/sbxup` path so a release is cut only when runner source changes:
+Per-template scoping is what keeps an unchanged template's tag stable across a release, so `sbxup`
+reuses the image users already built instead of rebuilding it.
 
-  ```bash
-  abcversion -p semversion --project sbxup   # or: task sbxup:version
-  ```
+`abcversion` must be on `PATH` for `task build:*`, `task version:*`, and the release scripts; CI
+installs the native binary directly (no .NET SDK). Get it from
+[releases](https://github.com/deneblab/abcversion/releases/latest).
 
 ## Building sbxup
 

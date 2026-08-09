@@ -23,9 +23,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Native binary: no .NET SDK step needed. See deneblab/abcversion README.
+      - name: Install abcversion
+        run: |
+          curl -fsSL -o /usr/local/bin/abcversion \
+            https://github.com/deneblab/abcversion/releases/latest/download/abcversion-linux-x64
+          chmod +x /usr/local/bin/abcversion
+
+      # Scoped to the dotnet10 project, matching what build-push.sh computes locally for the
+      # same image — previously this step used the repo-wide count and the two disagreed.
       - name: Compute version
         id: version
-        run: bash scripts/version/version.sh
+        run: |
+          VERSION=$(abcversion -p semversion --project dotnet10)
+          {
+            echo "version=$VERSION"
+            echo "tag=v$VERSION"
+            echo "sha=$(git rev-parse HEAD)"
+            echo "short_sha=$(git rev-parse --short=7 HEAD)"
+            echo "build_date_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_OUTPUT"
+          echo "Using version: $VERSION"
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3

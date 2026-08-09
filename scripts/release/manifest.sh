@@ -6,7 +6,8 @@
 #   --stage DIR    write manifest.json, <name>.Dockerfile for every template, and
 #                  templates-{version}.tar.gz of the whole src/ tree into DIR
 #
-# The manifest is built from src/*/template.yaml, so adding a template is adding a directory.
+# The manifest is built from src/*/template.yaml, so adding a template is adding a directory —
+# plus an .abcversion.json project keyed by its `short` name, which is where its version comes from.
 # CI and the Taskfile both call this script; there is no second copy of the logic to drift.
 
 set -euo pipefail
@@ -22,8 +23,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Read a key from a simple `key: value` YAML file. Mirrors yaml_val in version.sh, but keeps
-# inner whitespace so descriptions like ".NET SDK 10.0, Node.js 24.x" survive intact.
+if ! command -v abcversion >/dev/null 2>&1; then
+  echo "Error: abcversion not found on PATH — install it from" >&2
+  echo "  https://github.com/deneblab/abcversion/releases/latest" >&2
+  exit 1
+fi
+
+# Versions come from named .abcversion.json projects. AbcVersion scopes commit counting by
+# `Projects[].Path`; its own --path flag selects the repository, not a subtree — so every
+# template needs an entry keyed by its `short` name, and adding a template means adding one.
+# An unknown project is a hard error there, which is why a missing entry cannot silently fall
+# back to the repo-wide version.
+project_version() {
+  local project="$1"
+  if ! abcversion -p semversion --project "$project" 2>/dev/null; then
+    echo "Error: no '${project}' project in .abcversion.json" >&2
+    echo "  add: \"${project}\": { \"Name\": \"${project}\", \"Path\": \"src/<dir>\", \"BaseVersion\": \"0.2.0\" }" >&2
+    exit 1
+  fi
+}
+
+# Read a key from a simple `key: value` YAML file, keeping inner whitespace so descriptions
+# like ".NET SDK 10.0, Node.js 24.x" survive intact.
 yaml_val() {
   local file="$1" key="$2"
   grep -E "^${key}:" "$file" 2>/dev/null | head -1 \
@@ -36,7 +57,7 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-RELEASE_VERSION="$(bash scripts/version/version.sh --version-only)"
+RELEASE_VERSION="$(project_version templates)"
 RELEASE_TAG="templates-v${RELEASE_VERSION}"
 TARBALL="templates-${RELEASE_VERSION}.tar.gz"
 
@@ -62,8 +83,9 @@ for meta in src/*/template.yaml; do
     exit 1
   fi
 
-  # Per-template version uses the same path scoping the Taskfile applies to builds.
-  version="$(bash scripts/version/version.sh --path "src/${base}" --version-only)"
+  # Per-template version: only commits touching src/${base} bump it, so an unchanged template
+  # keeps its tag across releases and sbxup reuses the image users already built.
+  version="$(project_version "$short")"
 
   [ -n "$entries" ] && entries="${entries},"
   entries="${entries}

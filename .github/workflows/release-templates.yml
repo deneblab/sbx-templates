@@ -2,15 +2,14 @@ name: Release templates
 
 # Publishes the Dockerfiles themselves as a GitHub Release so `sbxup` can fetch, build and run
 # them locally — no Docker Hub pull required. Runs alongside build-push.yml, which keeps
-# publishing the prebuilt images to Docker Hub; the two share src/ and scripts/version.
+# publishing the prebuilt images to Docker Hub; the two share src/ and .abcversion.json.
 on:
   push:
     branches: [main]
     paths:
       - 'src/**'
       - 'scripts/release/manifest.sh'
-      - 'scripts/version/version.sh'
-      - 'version.yaml'
+      - '.abcversion.json'
       - '.github/workflows/release-templates.yml'
   workflow_dispatch:
 
@@ -26,10 +25,19 @@ jobs:
         with:
           fetch-depth: 0 # full history is required for version calculation
 
+      # Native binary: no .NET SDK step needed. See deneblab/abcversion README.
+      - name: Install abcversion
+        run: |
+          curl -fsSL -o /usr/local/bin/abcversion \
+            https://github.com/deneblab/abcversion/releases/latest/download/abcversion-linux-x64
+          chmod +x /usr/local/bin/abcversion
+
+      # The `templates` project counts only commits touching src/, so a release number tracks
+      # template changes and is not inflated by unrelated work elsewhere in the repo.
       - name: Compute version
         id: version
         run: |
-          VERSION=$(bash scripts/version/version.sh --version-only)
+          VERSION=$(abcversion -p semversion --project templates)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=templates-v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Using version: $VERSION"
