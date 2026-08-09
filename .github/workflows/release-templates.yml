@@ -32,12 +32,12 @@ jobs:
             https://github.com/deneblab/abcversion/releases/latest/download/abcversion-linux-x64
           chmod +x /usr/local/bin/abcversion
 
-      # The `templates` project counts only commits touching src/, so a release number tracks
-      # template changes and is not inflated by unrelated work elsewhere in the repo.
+      # --scope src counts only commits touching src/, so a release number tracks template
+      # changes and is not inflated by unrelated work elsewhere in the repo.
       - name: Compute version
         id: version
         run: |
-          VERSION=$(abcversion -p semversion --project templates)
+          VERSION=$(abcversion -p semversion --scope src)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=templates-v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Using version: $VERSION"

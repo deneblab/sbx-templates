@@ -167,37 +167,44 @@ The image tag is the same whether built locally or pushed — `sbxup` picks it u
 
 ## Versioning
 
-Everything is versioned by [AbcVersion](https://github.com/deneblab/AbcVersion) from
-`.abcversion.json` — one system, one binary, same behaviour on every OS. A version is
-`BaseVersion` plus the number of commits touching that project's `Path`:
+Everything is versioned by [AbcVersion](https://github.com/deneblab/AbcVersion) — one system, one
+binary, same behaviour on every OS. A version is `BaseVersion` (`0.2.0`, from `.abcversion.json`)
+plus the number of commits touching a subtree:
 
 ```bash
-abcversion -p semversion --project sbxup       # or: task sbxup:version
-abcversion -p semversion --project templates   # or: task templates:version
-abcversion -p semversion --project dotnet10    # or: task version:dotnet10
+abcversion -p semversion --scope src                       # task templates:version
+abcversion -p semversion --scope src/sbx-claude-dotnet10   # task version:dotnet10
+abcversion -p semversion --project sbxup                   # task sbxup:version
 ```
 
-| Project | Path | Versions |
-|---|---|---|
-| `sbxup` | `cmd/sbxup` | the `sbxup-v*` release |
-| `templates` | `src` | the `templates-v*` release and its tarball |
-| `dotnet10`, `dotnet10-node24`, `golang124-node24`, `python-uv` | `src/sbx-claude-*` | that one template's image tag and manifest entry |
+| Scope | Versions |
+|---|---|
+| `src` | the `templates-v*` release and its tarball |
+| `src/sbx-claude-*` | that one template's image tag and manifest entry |
+| `--project sbxup` (`cmd/sbxup`) | the `sbxup-v*` release |
 
-**Adding a template means adding a `Projects` entry too.** AbcVersion scopes commit counting by
-`Projects[].Path` and its own `--path` flag selects the *repository*, not a subtree, so per-template
-versions cannot be derived on the fly. The key is the template's `short` name — that is what
-`manifest.sh` and `build-push.sh` look up. A missing entry fails the build with an actionable
-message rather than silently falling back to a repo-wide number.
+**`--scope` needs no configuration**, so adding a template is still adding a directory — nothing
+in `.abcversion.json` to update. Only `sbxup` is a named project, because it is a release stream
+with an identity of its own rather than a number derived from a directory.
 
-Per-template scoping is what keeps an unchanged template's tag stable across a release, so `sbxup`
+Two AbcVersion flags are easy to confuse: `--path` is a *locator* (which repository to read;
+naming a subdirectory still versions the whole repo), while `--scope` is the *filter*. They cannot
+be combined with `--project`, and a scope matching no commits is a hard error — so a typo fails
+the build instead of quietly producing a repo-wide number.
+
+Per-directory scoping is what keeps an unchanged template's tag stable across a release, so `sbxup`
 reuses the image users already built instead of rebuilding it.
 
-`abcversion` must be on `PATH` for `task build:*`, `task version:*`, and the release scripts; CI
+`abcversion` **1.2.18+** (the release that added `--scope`) must be on `PATH` for `task build:*`,
+`task version:*`, and the release scripts, which check the version and say so if it is too old; CI
 installs the native binary directly (no .NET SDK). Get it from
 [releases](https://github.com/deneblab/abcversion/releases/latest).
 
-`docs/abcversion-path-vs-project.md` records why the per-template entries are unavoidable —
-`--path` locates a repository, it does not filter commits — with measurements to re-verify it.
+If a single template ever needs its own `BaseVersion` — a deliberate minor bump for one image —
+give that one a `Projects` entry and point its call at `--project` instead; the two styles coexist.
+
+`docs/abcversion-path-vs-project.md` compares the three scoping flags, records the measurements
+behind the choice, and lists the failure modes (all of which exit non-zero).
 
 ## Building sbxup
 

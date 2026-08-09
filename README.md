@@ -214,33 +214,34 @@ with a `.sha256` sidecar, and tags the release `sbxup-v{version}`.
 
 ## Versioning
 
-Everything is versioned with [AbcVersion](https://github.com/deneblab/AbcVersion) from
-`.abcversion.json`. Each project is a path, and its version is `BaseVersion` plus the number of
-commits touching that path — so a release is cut only when the code behind it actually changed:
+Everything is versioned with [AbcVersion](https://github.com/deneblab/AbcVersion). A version is
+`BaseVersion` plus the number of commits touching a subtree, so a release is cut only when the code
+behind it actually changed:
+
+```bash
+abcversion -p semversion --scope src                       # the templates-v* release
+abcversion -p semversion --scope src/sbx-claude-dotnet10   # one template's image tag
+abcversion -p semversion --project sbxup                   # the sbxup-v* release
+```
+
+`--scope` narrows the count to a directory without any configuration, so each template is versioned
+by its own commits — an unchanged template keeps its version across a release and `sbxup` reuses the
+image you already built. Adding a template is adding a directory; there is nothing to register.
+
+`.abcversion.json` therefore holds only the base version and the one stream that isn't derived from
+a directory:
 
 ```json
 {
   "BaseVersion": "0.2.0",
   "Projects": {
-    "sbxup":     { "Name": "sbxup",     "Path": "cmd/sbxup", "BaseVersion": "0.2.0" },
-    "templates": { "Name": "templates", "Path": "src",       "BaseVersion": "0.2.0" },
-    "dotnet10":  { "Name": "dotnet10",  "Path": "src/sbx-claude-dotnet10", "BaseVersion": "0.2.0" }
+    "sbxup": { "Name": "sbxup", "Path": "cmd/sbxup", "BaseVersion": "0.2.0" }
   }
 }
 ```
 
-```bash
-abcversion -p semversion --project sbxup       # the sbxup-v* release
-abcversion -p semversion --project templates   # the templates-v* release
-abcversion -p semversion --project dotnet10    # one template's image tag
-```
-
-Each template has its own project, keyed by its `short` name, so an unchanged template keeps its
-version across a release and `sbxup` reuses the image you already built. Adding a template means
-adding a `Projects` entry alongside its `src/` directory.
-
-`abcversion` needs to be on `PATH` for `task build:*`, `task version:*` and the release scripts —
-grab the native binary from
+`abcversion` **1.2.18+** (which introduced `--scope`) needs to be on `PATH` for `task build:*`,
+`task version:*` and the release scripts — grab the native binary from
 [releases](https://github.com/deneblab/abcversion/releases/latest).
 
 ## Merge agent changes

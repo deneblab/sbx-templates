@@ -26,22 +26,26 @@ done
 
 CONTEXT="${REPO_ROOT}/src/${IMAGE_NAME}"
 
+ABCVERSION_MIN="1.2.18" # first release with --scope
+
 if ! command -v abcversion >/dev/null 2>&1; then
   echo "Error: abcversion not found on PATH — install it from" >&2
   echo "  https://github.com/deneblab/abcversion/releases/latest" >&2
   exit 1
 fi
 
-# Version scoped to this image's directory. AbcVersion keys that scoping on a named project
-# (see .abcversion.json), and the project name is the template's `short` — the same name the
-# Taskfile and the release manifest use.
-PROJECT="$(grep -E '^short:' "${CONTEXT}/template.yaml" 2>/dev/null | head -1 \
-  | sed -e 's/^short:[[:space:]]*//' -e 's/[[:space:]]*$//')"
-[ -z "${PROJECT}" ] && PROJECT="${IMAGE_NAME}"
+abcversion_have="$(abcversion --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ -z "${abcversion_have}" ] ||
+  [ "$(printf '%s\n%s\n' "${ABCVERSION_MIN}" "${abcversion_have}" | sort -V | head -1)" != "${ABCVERSION_MIN}" ]; then
+  echo "Error: abcversion ${ABCVERSION_MIN}+ required for --scope (found ${abcversion_have:-none})" >&2
+  echo "  update from https://github.com/deneblab/abcversion/releases/latest" >&2
+  exit 1
+fi
 
-if ! version="$(abcversion -p semversion --project "${PROJECT}" 2>/dev/null)"; then
-  echo "Error: no '${PROJECT}' project in .abcversion.json" >&2
-  echo "  add: \"${PROJECT}\": { \"Name\": \"${PROJECT}\", \"Path\": \"src/${IMAGE_NAME}\", \"BaseVersion\": \"0.2.0\" }" >&2
+# Version scoped to this image's directory: BaseVersion plus the commits touching it, so an
+# unchanged template keeps its tag. No .abcversion.json entry needed — --scope is the narrowing.
+if ! version="$(abcversion -p semversion --scope "src/${IMAGE_NAME}" 2>/dev/null)"; then
+  echo "Error: abcversion --scope 'src/${IMAGE_NAME}' failed — does that directory exist in git?" >&2
   exit 1
 fi
 tag="v${version}"

@@ -31,8 +31,7 @@ tasks:
   "sbxup:version":
     desc: "Show computed semver for sbxup (via abcversion)"
     cmds:
-      - task: "_version"
-        vars: { PROJECT: sbxup }
+      - abcversion -p semversion --project sbxup
 
   # ── templates-v* release (Dockerfiles as release assets) ───────────────────
 
@@ -40,7 +39,7 @@ tasks:
     desc: "Show the version the next templates-v* release would carry"
     cmds:
       - task: "_version"
-        vars: { PROJECT: templates }
+        vars: { SCOPE: src }
 
   "templates:manifest":
     desc: "Print the manifest.json the templates-v* release would publish"
@@ -80,7 +79,7 @@ tasks:
     desc: "Show computed semver for sbx-claude-dotnet10"
     cmds:
       - task: "_version"
-        vars: { PROJECT: dotnet10 }
+        vars: { SCOPE: "src/sbx-claude-dotnet10" }
 
   "build:dotnet10":
     desc: "Build sbx-claude-dotnet10 locally"
@@ -106,7 +105,7 @@ tasks:
     desc: "Show computed semver for sbx-claude-dotnet10-node24"
     cmds:
       - task: "_version"
-        vars: { PROJECT: dotnet10-node24 }
+        vars: { SCOPE: "src/sbx-claude-dotnet10-node24" }
 
   "build:dotnet10-node24":
     desc: "Build sbx-claude-dotnet10-node24 locally"
@@ -132,7 +131,7 @@ tasks:
     desc: "Show computed semver for sbx-claude-golang124-node24"
     cmds:
       - task: "_version"
-        vars: { PROJECT: golang124-node24 }
+        vars: { SCOPE: "src/sbx-claude-golang124-node24" }
 
   "build:golang124-node24":
     desc: "Build sbx-claude-golang124-node24 locally"
@@ -161,7 +160,7 @@ tasks:
     desc: "Show computed semver for sbx-claude-python-uv"
     cmds:
       - task: "_version"
-        vars: { PROJECT: python-uv }
+        vars: { SCOPE: "src/sbx-claude-python-uv" }
 
   "build:python-uv":
     desc: "Build sbx-claude-python-uv locally"
@@ -186,10 +185,12 @@ tasks:
 
   # ── Versioning (abcversion, one binary on every OS) ───────────────────────
 
+  # --scope narrows the commit count to a subtree with no .abcversion.json entry, which is what
+  # keeps "adding a template" to "adding a directory". Requires abcversion 1.2.18+.
   "_version":
     internal: true
     cmds:
-      - abcversion -p semversion --project "{{.PROJECT}}"
+      - abcversion -p semversion --scope "{{.SCOPE}}"
 
   # ── Unix (Linux + macOS) ─────────────────────────────────────────────────
 

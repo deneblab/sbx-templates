@@ -5,31 +5,6 @@
       "Name": "sbxup",
       "Path": "cmd/sbxup",
       "BaseVersion": "0.2.0"
-    },
-    "templates": {
-      "Name": "templates",
-      "Path": "src",
-      "BaseVersion": "0.2.0"
-    },
-    "dotnet10": {
-      "Name": "dotnet10",
-      "Path": "src/sbx-claude-dotnet10",
-      "BaseVersion": "0.2.0"
-    },
-    "dotnet10-node24": {
-      "Name": "dotnet10-node24",
-      "Path": "src/sbx-claude-dotnet10-node24",
-      "BaseVersion": "0.2.0"
-    },
-    "golang124-node24": {
-      "Name": "golang124-node24",
-      "Path": "src/sbx-claude-golang124-node24",
-      "BaseVersion": "0.2.0"
-    },
-    "python-uv": {
-      "Name": "python-uv",
-      "Path": "src/sbx-claude-python-uv",
-      "BaseVersion": "0.2.0"
     }
   }
 }

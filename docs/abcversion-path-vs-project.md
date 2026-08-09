@@ -1,54 +1,43 @@
-# AbcVersion: `--path` selects a repository, `--project` scopes the commit count
+# AbcVersion scoping: `--path`, `--project`, `--scope`
 
-Findings from migrating this repository off `version.yaml` onto AbcVersion
-(commit `5410b11`). Written down because the distinction decides how templates
-are versioned, and because the obvious reading of `--path` is wrong.
+How this repository arrives at a version, and why the three flags are not
+interchangeable. Originally written when only `--path` and `--project` existed;
+**AbcVersion 1.2.18 added `--scope`, which is what the repo now uses.**
 
-- **Measured at** `HEAD = 5410b11`, 9 commits total, `BaseVersion: 0.2.0`
-- **Tool version** AbcVersion 1.2.17 (`releases/latest` at time of writing)
-
----
-
-## TL;DR
-
-`--path` answers *which repository*. `--project` answers *which part of it*.
-They are independent axes, and **only `--project` narrows the commit count**.
-
-Pointing `--path` at a subdirectory does not scope anything — it returns the
-same repo-wide version as running the tool at the root. Per-directory versions
-exist only as named `Projects` entries in `.abcversion.json`.
+- **Requires** AbcVersion **1.2.18+** — the build scripts check and refuse older ones
+- Measurements below taken at `HEAD = 4de2a0c`, 10 commits, `BaseVersion: 0.2.0`
 
 ---
 
-## Why this came up
+## The three flags
 
-Each template in `src/` needs its own version, so that a template nobody
-touched keeps its tag across a release and `sbxup` reuses the image a user has
-already built. The previous `version.sh --path src/<dir>` did exactly that with
-an ad-hoc flag.
+| Flag | Question it answers | Effect on the commit count |
+|---|---|---|
+| `--path` | *Which repository do I read?* | none — a **locator**, not a filter |
+| `--project` | *Which configured stream?* | narrows to that project's `Path` |
+| `--scope` | *Which subtree?* | narrows to that subtree, no config needed |
 
-The question was whether AbcVersion's `--path` could replace it — which would
-have meant no per-template configuration at all, preserving the repo's "adding
-a template is adding a directory" property. It cannot.
+`--scope` and `--project` both narrow, so they cannot be combined.
 
----
+## What this repository uses
 
-## The two axes
-
-From `abcversion --help`:
-
-```
-Options:
-  --path <path>        Path to git repository (default: current directory)
-  --project <name>     Project name from .abcversion.json (default: main)
+```bash
+abcversion -p semversion --scope src                       # templates-v* release
+abcversion -p semversion --scope src/sbx-claude-dotnet10   # one template's tag
+abcversion -p semversion --project sbxup                   # sbxup-v* release
 ```
 
-The help text is accurate and complete; it is just easy to misread `--path` as
-a path *filter* when it is a repository *locator*.
+`sbxup` stays a named project because it is a release stream with its own
+identity; every template number is derived from its directory, so it needs no
+entry. `.abcversion.json` is just a base version plus that one project.
 
-## Evidence
+---
 
-All rows measured in one pass at `HEAD = 5410b11`:
+## Why `--path` cannot do this (the original finding)
+
+The natural first guess is `--path src/<template>`. It does not work, and it
+fails *silently* — it returns the repo-wide version rather than an error.
+Measured before the switch, at `HEAD = 5410b11` (9 commits):
 
 | Command | Result |
 |---|---|
@@ -56,134 +45,85 @@ All rows measured in one pass at `HEAD = 5410b11`:
 | `abcversion -p semversion --path src` | `0.2.9` |
 | `abcversion -p semversion --path src/sbx-claude-dotnet10` | `0.2.9` |
 | `abcversion -p semversion --path src/sbx-claude-python-uv` | `0.2.9` |
-| `abcversion -p semversion --project templates` | **`0.2.4`** |
-| `abcversion -p semversion --project dotnet10` | **`0.2.4`** |
-| `abcversion -p semversion --project python-uv` | **`0.2.3`** |
-| `abcversion -p semversion --project sbxup` | **`0.2.5`** |
 
-Every `--path` row equals the repo-wide `0.2.9`: the subtree is not a filter.
+Every row equals the repo-wide number: the subtree is not a filter. As of
+1.2.18 the `--help` text says so outright ("A locator, not a filter"), and
+`--scope` is pointed to as the alternative.
 
-The `--project` rows confirm the actual formula — `BaseVersion` plus commits
-touching that project's `Path`:
+`--path` is still useful — it drives a repository you are not standing in, and
+composes with the others:
 
-| Project | `Path` | `git rev-list --count HEAD -- <path>` | Version |
-|---|---|---|---|
-| `templates` | `src` | 4 | `0.2.0` + 4 = `0.2.4` |
-| `dotnet10` | `src/sbx-claude-dotnet10` | 4 | `0.2.4` |
-| `python-uv` | `src/sbx-claude-python-uv` | 3 | `0.2.3` |
-| `sbxup` | `cmd/sbxup` | 5 | `0.2.5` |
-| *(repo-wide)* | — | 9 | `0.2.9` |
+```console
+$ abcversion -p semversion --path /w/DenebLab/sbx-templates --scope src
+0.2.4
+```
+
+Nothing here needs it: `manifest.sh` and `build-push.sh` both `cd` to the repo
+root first.
+
+## The formula
+
+`BaseVersion` + commits touching the scope. Verified against `git rev-list`
+at `HEAD = 4de2a0c`:
+
+| Scope | `git rev-list --count HEAD -- <path>` | Version |
+|---|---|---|
+| `src` | 4 | `0.2.0` + 4 = `0.2.4` |
+| `src/sbx-claude-dotnet10` | 4 | `0.2.4` |
+| `src/sbx-claude-python-uv` | 3 | `0.2.3` |
+| `cmd/sbxup` (`--project sbxup`) | 5 | `0.2.5` |
+| *(no scope — whole repo)* | 10 | `0.2.10` |
 
 `python-uv` sitting a patch behind its siblings is the property being bought:
-it is the one template that commit `5410b11` touched one fewer time.
+it is the one template the last commit touched one fewer time. An unchanged
+template keeps its tag across a release, so `sbxup` reuses the image a user
+already built instead of rebuilding it.
 
-### The flags compose
-
-`--path` is not useless — it drives a repository you are not standing in. Run
-from `/tmp`, entirely outside the checkout:
-
-```console
-$ abcversion -p semversion --path /w/DenebLab/sbx-templates --project python-uv
-0.2.3
-```
-
-That is its real use: a CI job whose checkout lives in a subdirectory, or one
-script versioning several repositories. Nothing in `sbx-templates` needs it —
-`manifest.sh` and `build-push.sh` both `cd` to the repo root first.
+The switch from per-template `Projects` entries to `--scope` was
+**version-neutral** — every project's `BaseVersion` already equalled the global
+`0.2.0`, so the numbers were identical before and after.
 
 ---
 
-## Consequence for this repository
+## Failure modes are loud
 
-Per-template scoping only exists as configuration, so **adding a template means
-adding a `Projects` entry**, keyed by the template's `short` name:
-
-```json
-"python-uv": {
-  "Name": "python-uv",
-  "Path": "src/sbx-claude-python-uv",
-  "BaseVersion": "0.2.0"
-}
-```
-
-That is a real cost — it breaks the previous "adding a template is adding a
-directory, nothing else to update" invariant, and `src/*/template.yaml`,
-`manifest.sh`, `CLAUDE.md` and `README.md` were all updated to say so.
-
-### Why the cost is acceptable: a missing entry fails loudly
-
-The danger with a name lookup is a silent fallback to a default — which here
-would be the repo-wide number, a real-looking version with wrong semantics
-(it changes on every commit anywhere, churning the tag of a template that
-never changed). AbcVersion does not do that:
+None of the mistakes below can silently produce a plausible-but-wrong version;
+each exits `1` with a specific message:
 
 ```console
+$ abcversion -p semversion --scope src/does-not-exist
+ArgumentException: Scope 'src/does-not-exist' matches no commits in this repository.
+                   Scope is resolved from the repository root, not the current directory.
+
+$ abcversion -p semversion --scope src --project sbxup
+ArgumentException: --scope and --project cannot be used together (--scope 'src',
+                   --project 'sbxup'). Both narrow the commit count — pick one.
+
+$ abcversion -p semversion --scope /abs/path
+ArgumentException: Scope '/abs/path' must be relative to the repository root.
+
 $ abcversion -p semversion --project nope
-ERROR ... System.ArgumentException: Project 'nope' not found in .abcversion.json.
-                                    Available projects: sbxup
-$ echo $?
-1
+ArgumentException: Project 'nope' not found in .abcversion.json. Available projects: sbxup
 ```
 
-Non-zero exit, and it lists what *is* configured. `manifest.sh` and
-`build-push.sh` catch this and turn it into the fix:
+This is what makes it safe to derive a release number from a string. A typo in
+a scope fails the build; it does not ship a tag computed from the wrong commits.
 
-```
-Error: no 'rust' project in .abcversion.json
-  add: "rust": { "Name": "rust", "Path": "src/<dir>", "BaseVersion": "0.2.0" }
-```
-
-So forgetting the entry costs a failed build with the JSON to paste, not a
-quietly wrong release.
-
----
-
-## Secondary finding: `info --path <subdir>` misreports the config
-
-`abcversion info` given a subdirectory claims it found no configuration, yet
-still applies the `BaseVersion` from it:
-
-```console
-$ abcversion info --path src/sbx-claude-python-uv
-Repository:    /w/DenebLab/sbx-templates/src/sbx-claude-python-uv
-Config:        (not found)
-SemVersion:    0.2.9
-```
-
-`0.2.9` is `0.2.0` (from `.abcversion.json`) + 9 commits. If the config had
-genuinely been ignored the answer would be `0.0.9`, because the default
-`BaseVersion` is `0.0.0` — confirmed against a scratch repository with three
-commits and no config file:
-
-```console
-$ abcversion --path /tmp/plainrepo -p semversion
-0.0.3
-```
-
-So the `Config: (not found)` line is a display artifact of passing a
-subdirectory, not a statement about what was used. Harmless to the numbers,
-but actively misleading while diagnosing a version — which is the one job
-`info` exists to do.
+`manifest.sh` and `build-push.sh` additionally check `abcversion --version`
+against the 1.2.18 minimum, so a stale binary reports that rather than an
+unrecognised-flag error.
 
 ---
 
 ## Reproduce
 
 ```bash
-git rev-parse --short HEAD; git rev-list --count HEAD
+abcversion --version                                      # expect >= 1.2.18
+abcversion -p semversion --path src                       # repo-wide => locator, not filter
+abcversion -p semversion --scope src                      # narrowed  => filter
 
-abcversion -p semversion
-abcversion -p semversion --path src                       # same answer => no scoping
-abcversion -p semversion --project templates              # different => scoping
-
-# the formula, for any project
 git rev-list --count HEAD -- src/sbx-claude-python-uv     # 3
-abcversion -p semversion --project python-uv              # 0.2.0 + 3
-
-# default BaseVersion with no config
-mkdir /tmp/plainrepo && cd /tmp/plainrepo && git init -q .
-for i in 1 2 3; do : > f$i; git add .; git commit -qm c$i; done
-abcversion -p semversion                                  # 0.0.3
+abcversion -p semversion --scope src/sbx-claude-python-uv # 0.2.0 + 3
 ```
 
 Version numbers rise as commits land; the *relationships* between them are the
@@ -191,17 +131,23 @@ stable part.
 
 ---
 
-## Possible upstream changes (deneblab/AbcVersion)
+## Escape hatch
 
-Neither is required — this repository works as configured — but both would have
-saved time here:
+If one template ever needs its own `BaseVersion` — a deliberate minor bump for a
+breaking change to a single image — give that template a `Projects` entry and
+switch its call site to `--project`. The two styles coexist; `--scope` is simply
+the default because it costs no configuration.
 
-1. **Fix the `info` config line** so it reports the configuration actually used
-   when `--path` names a subdirectory. Lowest effort, removes a misleading
-   diagnostic.
-2. **Consider making `--path` scope the commit count** when it points inside a
-   repository, or add a separate flag (`--scope`, say) that does. That would
-   allow per-directory versions without a `Projects` entry per directory, which
-   is the property this repository gave up. If the current behaviour is
-   deliberate, saying so explicitly in `--help` — "repository location, not a
-   path filter" — would settle it at the point of use.
+---
+
+## Changelog
+
+- **1.2.15–1.2.17** — only `--path` and `--project`. Per-template versions
+  required a `Projects` entry each, breaking "adding a template is adding a
+  directory". Recorded here at the time, along with a display bug: `info --path
+  <subdir>` printed `Config: (not found)` while still applying the `BaseVersion`
+  from that very config.
+- **1.2.18** — added `--scope`, clarified the `--path` help text, and fixed the
+  `info` config line (it now reports the repository root and the config it
+  used). This repository dropped its five template `Projects` entries in
+  response; only `sbxup` remains.

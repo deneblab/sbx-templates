@@ -6,8 +6,7 @@
 #   --stage DIR    write manifest.json, <name>.Dockerfile for every template, and
 #                  templates-{version}.tar.gz of the whole src/ tree into DIR
 #
-# The manifest is built from src/*/template.yaml, so adding a template is adding a directory —
-# plus an .abcversion.json project keyed by its `short` name, which is where its version comes from.
+# The manifest is built from src/*/template.yaml, so adding a template is adding a directory.
 # CI and the Taskfile both call this script; there is no second copy of the logic to drift.
 
 set -euo pipefail
@@ -23,22 +22,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+ABCVERSION_MIN="1.2.18" # first release with --scope
+
 if ! command -v abcversion >/dev/null 2>&1; then
   echo "Error: abcversion not found on PATH — install it from" >&2
   echo "  https://github.com/deneblab/abcversion/releases/latest" >&2
   exit 1
 fi
 
-# Versions come from named .abcversion.json projects. AbcVersion scopes commit counting by
-# `Projects[].Path`; its own --path flag selects the repository, not a subtree — so every
-# template needs an entry keyed by its `short` name, and adding a template means adding one.
-# An unknown project is a hard error there, which is why a missing entry cannot silently fall
-# back to the repo-wide version.
-project_version() {
-  local project="$1"
-  if ! abcversion -p semversion --project "$project" 2>/dev/null; then
-    echo "Error: no '${project}' project in .abcversion.json" >&2
-    echo "  add: \"${project}\": { \"Name\": \"${project}\", \"Path\": \"src/<dir>\", \"BaseVersion\": \"0.2.0\" }" >&2
+abcversion_have="$(abcversion --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ -z "${abcversion_have}" ] ||
+  [ "$(printf '%s\n%s\n' "${ABCVERSION_MIN}" "${abcversion_have}" | sort -V | head -1)" != "${ABCVERSION_MIN}" ]; then
+  echo "Error: abcversion ${ABCVERSION_MIN}+ required for --scope (found ${abcversion_have:-none})" >&2
+  echo "  update from https://github.com/deneblab/abcversion/releases/latest" >&2
+  exit 1
+fi
+
+# Versions are BaseVersion plus the commits touching a subtree. --scope does that narrowing
+# directly, so a template needs no .abcversion.json entry and adding one stays "add a directory".
+# A scope matching no commits is a hard error, so a typo cannot quietly yield a repo-wide number.
+scope_version() {
+  local scope="$1"
+  if ! abcversion -p semversion --scope "$scope" 2>/dev/null; then
+    echo "Error: abcversion --scope '${scope}' failed — no commits touch that path?" >&2
     exit 1
   fi
 }
@@ -57,7 +63,7 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-RELEASE_VERSION="$(project_version templates)"
+RELEASE_VERSION="$(scope_version src)"
 RELEASE_TAG="templates-v${RELEASE_VERSION}"
 TARBALL="templates-${RELEASE_VERSION}.tar.gz"
 
@@ -85,7 +91,7 @@ for meta in src/*/template.yaml; do
 
   # Per-template version: only commits touching src/${base} bump it, so an unchanged template
   # keeps its tag across releases and sbxup reuses the image users already built.
-  version="$(project_version "$short")"
+  version="$(scope_version "src/${base}")"
 
   [ -n "$entries" ] && entries="${entries},"
   entries="${entries}

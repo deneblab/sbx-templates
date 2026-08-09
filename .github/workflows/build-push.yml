@@ -30,12 +30,12 @@ jobs:
             https://github.com/deneblab/abcversion/releases/latest/download/abcversion-linux-x64
           chmod +x /usr/local/bin/abcversion
 
-      # Scoped to the dotnet10 project, matching what build-push.sh computes locally for the
+      # Scoped to the image's directory, matching what build-push.sh computes locally for the
       # same image — previously this step used the repo-wide count and the two disagreed.
       - name: Compute version
         id: version
         run: |
-          VERSION=$(abcversion -p semversion --project dotnet10)
+          VERSION=$(abcversion -p semversion --scope src/sbx-claude-dotnet10)
           {
             echo "version=$VERSION"
             echo "tag=v$VERSION"

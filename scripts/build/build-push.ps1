@@ -19,24 +19,24 @@ $RepoRoot   = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 $Image      = "docker.io/pkudrel/$ImageName"
 $Context    = (Resolve-Path (Join-Path $RepoRoot "src\$ImageName")).Path
 
+$AbcVersionMin = [version]"1.2.18" # first release with --scope
+
 if (-not (Get-Command abcversion -ErrorAction SilentlyContinue)) {
     Write-Error "abcversion not found on PATH - install it from https://github.com/deneblab/abcversion/releases/latest"
     exit 1
 }
 
-# Version scoped to this image's directory. AbcVersion keys that scoping on a named project
-# (see .abcversion.json), and the project name is the template's `short` — the same name the
-# Taskfile and the release manifest use.
-$meta    = Join-Path $Context "template.yaml"
-$project = $ImageName
-if (Test-Path $meta) {
-    $shortLine = Select-String -Path $meta -Pattern '^short:\s*(.+?)\s*$' | Select-Object -First 1
-    if ($shortLine) { $project = $shortLine.Matches[0].Groups[1].Value }
+$abcRaw = (& abcversion --version) -join " "
+if ($abcRaw -notmatch '(\d+\.\d+\.\d+)' -or [version]$Matches[1] -lt $AbcVersionMin) {
+    Write-Error "abcversion $AbcVersionMin+ required for --scope (found '$abcRaw') - update from https://github.com/deneblab/abcversion/releases/latest"
+    exit 1
 }
 
-$version = & abcversion -p semversion --project $project 2>$null
+# Version scoped to this image's directory: BaseVersion plus the commits touching it, so an
+# unchanged template keeps its tag. No .abcversion.json entry needed — --scope is the narrowing.
+$version = & abcversion -p semversion --scope "src/$ImageName" 2>$null
 if ($LASTEXITCODE -ne 0 -or -not $version) {
-    Write-Error "No '$project' project in .abcversion.json - add { `"Name`": `"$project`", `"Path`": `"src/$ImageName`", `"BaseVersion`": `"0.2.0`" }"
+    Write-Error "abcversion --scope 'src/$ImageName' failed - does that directory exist in git?"
     exit 1
 }
 
