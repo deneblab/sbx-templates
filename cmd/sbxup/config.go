@@ -33,8 +33,11 @@ clone: false
 // locally built rather than pulled: with it set, sbxup builds the named template from the
 // templates-v* release and runs the resulting local image.
 type BuildConfig struct {
-	Name    string // template name or short alias, e.g. "dotnet10"
-	Release string // optional pin, e.g. "templates-v0.1.3"; empty means latest
+	Name string // template name or short alias, e.g. "dotnet10"
+	// Release names the source repository and the release, in any form parseReleaseRef
+	// accepts: "deneblab/sbx-templates@0.1.4", "@latest", a bare "0.1.4" or tag for the
+	// default repository, or empty for its newest release.
+	Release string
 }
 
 // Config is the resolved sbxup.yaml. Clone is decoded leniently because the PowerShell
@@ -158,17 +161,29 @@ func isTruthy(v any) bool {
 	return false
 }
 
-// buildConfigBody renders a config wired to a locally built template: `template` is the tag
-// the build produces, and the `build` block records how to reproduce it. The release is
-// pinned so a later `sbxup` rebuilds the same thing rather than silently following upstream.
-func buildConfigBody(t *TemplateEntry, release string) string {
+// buildConfigBody renders a config wired to a locally built template.
+//
+// No version appears anywhere: `template` is the bare template name and `release` floats at
+// @latest. Writing a resolved pin here was the reason a user had to know a release tag before
+// they could edit their own config — pinning stays available, as a deliberate edit.
+func buildConfigBody(t *TemplateEntry, ref releaseRef) string {
+	source := releaseRef{Owner: ref.Owner, Repo: ref.Repo} // no Tag => @latest
 	return fmt.Sprintf(`template: %s
 agent: claude
 clone: false
 build:
-  name: %s          # built locally from src/%s/Dockerfile in the release tarball
-  release: %s
-`, t.LocalTag(), t.Short, t.Name, release)
+  name: %s   # built locally from src/%s/Dockerfile in the release tarball
+  release: %s   # replace 'latest' with a version, e.g. @%s, to freeze the environment
+`, t.Name, t.Name, t.Name, source, versionOrLatest(t))
+}
+
+// versionOrLatest supplies the example pin in the generated comment: the version actually
+// resolved, so the user can see the shape of the value they would be typing.
+func versionOrLatest(t *TemplateEntry) string {
+	if t.Version == "" {
+		return "latest"
+	}
+	return t.Version
 }
 
 // initConfig writes the default starter config, refusing to clobber an existing one.

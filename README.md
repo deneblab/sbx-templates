@@ -84,7 +84,7 @@ clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
 build:              # optional: build the template locally instead of pulling it
   name: dotnet10
-  release: templates-v0.1.3
+  release: deneblab/sbx-templates@latest
 ```
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
@@ -104,13 +104,40 @@ sbxup                 # builds it locally the first time, then reuses the image
 `--init` writes a config with a `build:` block, which is what marks the template as locally built:
 
 ```yaml
-template: sbx-claude-dotnet10:0.1.2
+template: sbx-claude-dotnet10
 agent: claude
 clone: false
 build:
-  name: dotnet10
-  release: templates-v0.1.3
+  name: sbx-claude-dotnet10
+  release: deneblab/sbx-templates@latest
 ```
+
+**No version appears anywhere**, which is the point: you name a template, not a release tag.
+
+### Choosing a release
+
+`release:` takes `<owner>/<repo>@<version|tag|latest>`, and the short forms mean the default
+repository:
+
+```yaml
+release: deneblab/sbx-templates@latest         # newest release, re-checked periodically
+release: deneblab/sbx-templates@0.1.4          # frozen
+release: 0.1.4                                 # same, default repository
+release: templates-v0.1.4                      # same, full tag
+release:                                       # omitted entirely = latest
+```
+
+A value that is none of these is an error listing the accepted forms — a mistyped pin never
+silently degrades to "latest".
+
+Naming another repository builds that fork's templates instead; its images are tagged
+`<owner>-<template>:<version>` so they cannot overwrite the canonical ones in the sandbox image
+store. `sbxup --self-update` always updates from `deneblab/sbx-templates`, whatever a project config
+says.
+
+With `@latest`, the resolved release tag is remembered for 180 hours, so ordinary runs make no
+network call and still work offline; `--refresh` re-checks immediately. The tag in use is printed on
+every run (`Template: dotnet10 0.2.6 (templates-v0.2.6)`).
 
 Useful flags:
 
@@ -118,7 +145,7 @@ Useful flags:
 sbxup --build --template dotnet10   # build a template without editing the config first
 sbxup --rebuild                     # rebuild even though the image exists
 sbxup --update-claude               # rebuild only the Claude Code layer
-sbxup --refresh                     # re-download the manifest and template tarball
+sbxup --refresh                     # re-check for a newer release, re-download its assets
 sbxup --init --template dotnet10    # non-interactive; no prompt
 ```
 
@@ -128,7 +155,9 @@ every template in the release available, so switching templates later needs no n
 Every downloaded asset is checksum-verified before it is written or built — a Dockerfile becomes the
 agent's execution environment, so a mismatch aborts and nothing is built. Extraction is equally
 wary: only regular files under `src/`, and any symlink or path escaping the destination aborts it.
-Downloads are cached under `~/.cache/sbxup/templates/<release>/` (`%LocalAppData%` on Windows).
+Downloads are cached under `~/.cache/sbxup/templates/<owner>-<repo>/<release>/` (`%LocalAppData%` on
+Windows); the source repository is part of the path because two repositories can publish the same
+release tag.
 
 **Docker Desktop is only needed to build.** The sandbox runtime has its own image store, so once a
 template is registered, `sbxup` reuses it without touching Docker or the network — `sbx template ls`

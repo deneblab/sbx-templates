@@ -155,8 +155,8 @@ func ensureTemplate(tag string, dryRun bool) error {
 //
 // force rebuilds even when the tag already exists; updateClaude refreshes only the Claude
 // Code stage. Both are no-ops when the image is present and neither is set.
-func buildTemplate(dockerfile string, t *TemplateEntry, release string, force, updateClaude, dryRun bool) (string, error) {
-	tag := t.LocalTag()
+func buildTemplate(dockerfile string, t *TemplateEntry, ref releaseRef, force, updateClaude, dryRun bool) (string, error) {
+	tag := t.LocalTag(ref)
 
 	if !force && !updateClaude && !dryRun {
 		// Ask `sbx` first: it answers without a Docker daemon, and a template already in its
@@ -182,7 +182,7 @@ func buildTemplate(dockerfile string, t *TemplateEntry, release string, force, u
 	// same context `build-push.sh` passes locally. It holds only that template's Dockerfile and
 	// template.yaml, so the context stays tiny; these templates never COPY from it anyway.
 	context := filepath.Dir(dockerfile)
-	args := buildArgs(dockerfile, context, tag, t.Version, release, time.Now().UTC().Format("2006-01-02T15:04:05Z"), updateClaude)
+	args := buildArgs(dockerfile, context, tag, t.Version, ref.Tag, time.Now().UTC().Format("2006-01-02T15:04:05Z"), updateClaude)
 
 	if dryRun {
 		fmt.Printf("[dry-run] docker %s\n", strings.Join(args, " "))

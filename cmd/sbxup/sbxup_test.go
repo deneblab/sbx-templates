@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // chdir moves into a fresh temp dir for the duration of a test.
@@ -398,7 +399,7 @@ func TestParseManifest(t *testing.T) {
 
 // A manifest with no tarball is a broken release, not something to work around.
 func TestFetchDockerfileRejectsAManifestWithNoTarball(t *testing.T) {
-	_, err := fetchDockerfile(nil, "templates-v0.2.6", &Manifest{}, &TemplateEntry{Name: "x"}, false)
+	_, err := fetchDockerfile(nil, defaultRef("templates-v0.2.6"), &Manifest{}, &TemplateEntry{Name: "x"}, false)
 	if err == nil || !strings.Contains(err.Error(), "incomplete") {
 		t.Fatalf("err = %v, want an incomplete-manifest error", err)
 	}
@@ -425,13 +426,21 @@ func TestFindTemplate(t *testing.T) {
 }
 
 func TestLocalTag(t *testing.T) {
+	canonical := defaultRef("templates-v0.1.2")
 	versioned := TemplateEntry{Name: "sbx-claude-dotnet10", Version: "0.1.2"}
-	if got := versioned.LocalTag(); got != "sbx-claude-dotnet10:0.1.2" {
+	if got := versioned.LocalTag(canonical); got != "sbx-claude-dotnet10:0.1.2" {
 		t.Errorf("LocalTag = %q", got)
 	}
 	unversioned := TemplateEntry{Name: "sbx-claude-dotnet10"}
-	if got := unversioned.LocalTag(); got != "sbx-claude-dotnet10:local" {
+	if got := unversioned.LocalTag(canonical); got != "sbx-claude-dotnet10:local" {
 		t.Errorf("LocalTag = %q", got)
+	}
+
+	// A fork publishing the same name and version must not collide with the canonical image in
+	// the sandbox runtime's single image store.
+	fork := releaseRef{Owner: "Acme", Repo: "sbx-templates", Tag: "templates-v0.1.2"}
+	if got := versioned.LocalTag(fork); got != "acme-sbx-claude-dotnet10:0.1.2" {
+		t.Errorf("fork LocalTag = %q, want the owner-namespaced, lowercased tag", got)
 	}
 }
 
@@ -504,18 +513,162 @@ func TestPickTemplate(t *testing.T) {
 }
 
 func TestResolveTemplatesRelease(t *testing.T) {
-	// A pin is honoured verbatim, and a bare version is normalised to a tag.
+	// A pin is honoured verbatim, and a bare version is normalised to a tag. A pinned ref needs
+	// no network at all, hence the nil client.
 	for in, want := range map[string]string{
-		"templates-v0.1.3": "templates-v0.1.3",
-		"0.1.3":            "templates-v0.1.3",
-		"v0.1.3":           "templates-v0.1.3",
+		"templates-v0.1.3":             "templates-v0.1.3",
+		"0.1.3":                        "templates-v0.1.3",
+		"v0.1.3":                       "templates-v0.1.3",
+		"deneblab/sbx-templates@0.1.3": "templates-v0.1.3",
+		"deneblab/sbx-templates@templates-v0.1.3": "templates-v0.1.3",
 	} {
-		got, err := resolveTemplatesRelease(nil, in)
+		got, err := resolveTemplatesRelease(nil, in, false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != want {
-			t.Errorf("resolveTemplatesRelease(%q) = %q, want %q", in, got, want)
+		if got.Tag != want {
+			t.Errorf("resolveTemplatesRelease(%q) = %q, want %q", in, got.Tag, want)
+		}
+	}
+}
+
+func TestParseReleaseRef(t *testing.T) {
+	accepted := []struct {
+		in               string
+		owner, repo, tag string
+	}{
+		{"", defaultOwner, defaultRepo, ""},
+		{"latest", defaultOwner, defaultRepo, ""},
+		{"LATEST", defaultOwner, defaultRepo, ""},
+		{"0.1.4", defaultOwner, defaultRepo, "templates-v0.1.4"},
+		{"v0.1.4", defaultOwner, defaultRepo, "templates-v0.1.4"},
+		{"templates-v0.1.4", defaultOwner, defaultRepo, "templates-v0.1.4"},
+		{"acme/sbx-templates@latest", "acme", "sbx-templates", ""},
+		{"acme/sbx-templates@0.1.4", "acme", "sbx-templates", "templates-v0.1.4"},
+		{"acme/sbx-templates@templates-v0.1.4", "acme", "sbx-templates", "templates-v0.1.4"},
+		{"acme/sbx-templates", "acme", "sbx-templates", ""},
+		{"  0.1.4  ", defaultOwner, defaultRepo, "templates-v0.1.4"},
+	}
+	for _, tc := range accepted {
+		got, err := parseReleaseRef(tc.in)
+		if err != nil {
+			t.Errorf("parseReleaseRef(%q): %v", tc.in, err)
+			continue
+		}
+		if got.Owner != tc.owner || got.Repo != tc.repo || got.Tag != tc.tag {
+			t.Errorf("parseReleaseRef(%q) = %+v, want %s/%s tag %q", tc.in, got, tc.owner, tc.repo, tc.tag)
+		}
+	}
+
+	// A value sbxup cannot read must fail. Silently resolving it to "latest" would defeat the
+	// only reason the key exists — "lastest" is the case that matters.
+	for _, bad := range []string{
+		"lastest", "late st", "templates-v", "templates-vlastest", "0.1.4-beta",
+		"a/b/c@0.1.4", "../x@0.1.4", "acme/..@0.1.4", "@0.1.4", "acme/sbx-templates@",
+		"acme/sbx-templates@lastest", "https://github.com/acme/sbx-templates/releases/latest",
+	} {
+		if got, err := parseReleaseRef(bad); err == nil {
+			t.Errorf("parseReleaseRef(%q) = %+v, want an error", bad, got)
+		}
+	}
+}
+
+func TestResolveTemplatesReleaseCachesLatest(t *testing.T) {
+	cacheHome(t)
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, `[{"tag_name":"templates-v0.2.6"}]`)
+	}))
+	defer srv.Close()
+	orig := repoAPI
+	repoAPI = srv.URL
+	t.Cleanup(func() { repoAPI = orig })
+
+	base := now()
+	origNow := now
+	t.Cleanup(func() { now = origNow })
+	now = func() time.Time { return base }
+
+	// First resolution asks GitHub and records the answer.
+	ref, err := resolveTemplatesRelease(srv.Client(), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Tag != "templates-v0.2.6" || calls != 1 {
+		t.Fatalf("ref = %+v after %d calls", ref, calls)
+	}
+
+	// Inside the TTL the cached answer is used, with no network call — this is what makes a
+	// pin-less config offline-capable.
+	if _, err := resolveTemplatesRelease(nil, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Errorf("cached resolution made %d extra requests", calls-1)
+	}
+
+	// --refresh always re-checks.
+	if _, err := resolveTemplatesRelease(srv.Client(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("--refresh did not re-check: calls = %d", calls)
+	}
+
+	// Past the TTL it re-checks by itself.
+	now = func() time.Time { return base.Add(latestTTL + time.Hour) }
+	if _, err := resolveTemplatesRelease(srv.Client(), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Errorf("expired cache did not re-check: calls = %d", calls)
+	}
+}
+
+func TestResolveTemplatesReleaseFallsBackToAStaleCache(t *testing.T) {
+	cacheHome(t)
+	ref := defaultRef("")
+	if err := writeLatestRecord(ref, "templates-v0.2.6"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Age the record past the TTL, then take the network away entirely.
+	base := now()
+	origNow := now
+	t.Cleanup(func() { now = origNow })
+	now = func() time.Time { return base.Add(latestTTL + time.Hour) }
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	client := srv.Client()
+	origAPI := repoAPI
+	repoAPI = srv.URL
+	srv.Close() // every request now fails to connect
+	t.Cleanup(func() { repoAPI = origAPI })
+
+	got, err := resolveTemplatesRelease(client, "", false)
+	if err != nil {
+		t.Fatalf("offline resolution failed instead of using the cached tag: %v", err)
+	}
+	if got.Tag != "templates-v0.2.6" {
+		t.Errorf("Tag = %q, want the last known release", got.Tag)
+	}
+}
+
+func TestTemplateKeyAgrees(t *testing.T) {
+	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Short: "dotnet10", Version: "0.2.6"}
+	const tag = "sbx-claude-dotnet10:0.2.6"
+
+	for _, ok := range []string{"", tag, "sbx-claude-dotnet10", "dotnet10"} {
+		if !templateKeyAgrees(ok, entry, tag) {
+			t.Errorf("templateKeyAgrees(%q) = false, want true", ok)
+		}
+	}
+	// The stale pin that started this issue: the build wins, so it must not pass unremarked.
+	for _, bad := range []string{"sbx-claude-dotnet10:0.1.3", "docker.io/pkudrel/sbx-claude-dotnet10:latest"} {
+		if templateKeyAgrees(bad, entry, tag) {
+			t.Errorf("templateKeyAgrees(%q) = true, want a warning", bad)
 		}
 	}
 }
@@ -535,7 +688,7 @@ func TestLatestReleaseByPrefix(t *testing.T) {
 		templatesTagPrefix: "templates-v0.1.3",
 		tagPrefix:          "sbxup-v0.2.1",
 	} {
-		got, err := latestRelease(srv.Client(), prefix)
+		got, err := latestRelease(srv.Client(), defaultRef(""), prefix)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -544,8 +697,42 @@ func TestLatestReleaseByPrefix(t *testing.T) {
 		}
 	}
 
-	if _, err := latestRelease(srv.Client(), "nothing-v"); err == nil {
+	if _, err := latestRelease(srv.Client(), defaultRef(""), "nothing-v"); err == nil {
 		t.Error("expected an error when no release carries the prefix")
+	}
+}
+
+// A non-default source is addressed through the GitHub host, at that repository's own path.
+func TestLatestReleaseUsesTheConfiguredRepository(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		if strings.Contains(path, "/acme/") {
+			fmt.Fprint(w, `[{"tag_name":"templates-v9.9.9"}]`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	orig := githubAPI
+	githubAPI = srv.URL
+	t.Cleanup(func() { githubAPI = orig })
+
+	got, err := latestRelease(srv.Client(), releaseRef{Owner: "acme", Repo: "sbx-templates"}, templatesTagPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "templates-v9.9.9" {
+		t.Errorf("latestRelease = %q", got)
+	}
+	if path != "/repos/acme/sbx-templates/releases" {
+		t.Errorf("requested %q, want the fork's releases path", path)
+	}
+
+	// A repository that does not exist (or is private) must say so — sbxup sends no credentials.
+	_, err = latestRelease(srv.Client(), releaseRef{Owner: "nobody", Repo: "nothing"}, templatesTagPrefix)
+	if err == nil || !strings.Contains(err.Error(), "public") {
+		t.Fatalf("err = %v, want a not-found/not-public message", err)
 	}
 }
 
@@ -570,7 +757,7 @@ func TestFetchVerified(t *testing.T) {
 		repoWeb = srv.URL
 		t.Cleanup(func() { repoWeb = orig })
 
-		got, err := fetchVerified(srv.Client(), "templates-v0.1.3", "x.Dockerfile")
+		got, err := fetchVerified(srv.Client(), defaultRef("templates-v0.1.3"), "x.Dockerfile")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -586,7 +773,7 @@ func TestFetchVerified(t *testing.T) {
 		repoWeb = srv.URL
 		t.Cleanup(func() { repoWeb = orig })
 
-		_, err := fetchVerified(srv.Client(), "templates-v0.1.3", "x.Dockerfile")
+		_, err := fetchVerified(srv.Client(), defaultRef("templates-v0.1.3"), "x.Dockerfile")
 		if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 			t.Fatalf("err = %v, want a checksum mismatch", err)
 		}
@@ -649,20 +836,36 @@ func TestBuildConfigBodyRoundTrip(t *testing.T) {
 		Short:   "dotnet10",
 		Version: "0.1.2",
 	}
-	write(t, "c.yaml", buildConfigBody(&entry, "templates-v0.1.3"))
+	write(t, "c.yaml", buildConfigBody(&entry, defaultRef("templates-v0.2.6")))
 
 	cfg, err := loadConfig("c.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Template != "sbx-claude-dotnet10:0.1.2" {
-		t.Errorf("Template = %q", cfg.Template)
+	// No version anywhere in the generated config: that requirement is the whole issue.
+	if cfg.Template != "sbx-claude-dotnet10" {
+		t.Errorf("Template = %q, want the bare template name", cfg.Template)
 	}
 	if cfg.Agent != "claude" {
 		t.Errorf("Agent = %q", cfg.Agent)
 	}
-	if cfg.Build == nil || cfg.Build.Name != "dotnet10" || cfg.Build.Release != "templates-v0.1.3" {
+	if cfg.Build == nil || cfg.Build.Name != "sbx-claude-dotnet10" {
 		t.Fatalf("Build = %+v", cfg.Build)
+	}
+	if cfg.Build.Release != "deneblab/sbx-templates@latest" {
+		t.Errorf("Build.Release = %q, want a floating source@latest", cfg.Build.Release)
+	}
+	if strings.Contains(cfg.Build.Release, "0.2.6") {
+		t.Errorf("--init pinned a version: %q", cfg.Build.Release)
+	}
+
+	// And what it writes must resolve back to the release it was generated from.
+	ref, err := parseReleaseRef(cfg.Build.Release)
+	if err != nil {
+		t.Fatalf("generated config does not parse: %v", err)
+	}
+	if ref.Owner != defaultOwner || ref.Repo != defaultRepo || ref.Tag != "" {
+		t.Errorf("parsed ref = %+v", ref)
 	}
 }
 
@@ -682,12 +885,24 @@ func TestInitConfigBodyNeverClobbers(t *testing.T) {
 }
 
 func TestTemplatesCacheDir(t *testing.T) {
-	dir, err := templatesCacheDir("templates-v0.1.3")
+	dir, err := templatesCacheDir(defaultRef("templates-v0.1.3"))
 	if err != nil {
 		t.Skipf("no user cache dir available: %v", err)
 	}
 	if filepath.Base(dir) != "templates-v0.1.3" || !strings.Contains(dir, "sbxup") {
 		t.Errorf("templatesCacheDir = %q", dir)
+	}
+	// The source repository is part of the path: two repositories can publish the same tag.
+	if filepath.Base(filepath.Dir(dir)) != "deneblab-sbx-templates" {
+		t.Errorf("templatesCacheDir = %q, want a per-repository segment", dir)
+	}
+
+	fork, err := templatesCacheDir(releaseRef{Owner: "acme", Repo: "sbx-templates", Tag: "templates-v0.1.3"})
+	if err != nil {
+		t.Skipf("no user cache dir available: %v", err)
+	}
+	if fork == dir {
+		t.Errorf("a fork shares the canonical cache directory: %q", fork)
 	}
 }
 
@@ -729,6 +944,7 @@ func TestParseArgsLocalTemplateFlags(t *testing.T) {
 
 func TestInitFlowDryRunWritesNothing(t *testing.T) {
 	dir := chdir(t)
+	cacheHome(t) // isolate from any real resolved-latest record
 
 	// No release carries the templates-v prefix, so initFlow takes its fallback path — the
 	// one that previously wrote the config even under --dry-run.
@@ -773,7 +989,7 @@ func TestBuildTemplateDoesNotNeedDockerForARegisteredTemplate(t *testing.T) {
 		return false
 	}
 
-	tag, err := buildTemplate("/cache/x.Dockerfile", entry, "templates-v0.1.4", false, false, false)
+	tag, err := buildTemplate("/cache/x.Dockerfile", entry, defaultRef("templates-v0.1.4"), false, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -826,7 +1042,7 @@ func TestBuildTemplateReportsAStoppedDaemon(t *testing.T) {
 	sbxTemplateListed = func(string) bool { return false } // not built yet
 	dockerAvailable = func() bool { return false }         // Docker Desktop is closed
 
-	_, err := buildTemplate("/cache/x.Dockerfile", entry, "templates-v0.1.4", false, false, false)
+	_, err := buildTemplate("/cache/x.Dockerfile", entry, defaultRef("templates-v0.1.4"), false, false, false)
 	if err == nil {
 		t.Fatal("expected an error when a build is required and Docker is unreachable")
 	}
@@ -1061,7 +1277,7 @@ func TestFetchDockerfileUsesTheTarball(t *testing.T) {
 	dotnet := &TemplateEntry{Name: "sbx-claude-dotnet10"}
 	python := &TemplateEntry{Name: "sbx-claude-python-uv"}
 
-	path, err := fetchDockerfile(srv.Client(), "templates-v0.2.5", m, dotnet, false)
+	path, err := fetchDockerfile(srv.Client(), defaultRef("templates-v0.2.5"), m, dotnet, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1075,7 +1291,7 @@ func TestFetchDockerfileUsesTheTarball(t *testing.T) {
 
 	after := hits
 	// A second template from the same release is already on disk: no further downloads.
-	if _, err := fetchDockerfile(srv.Client(), "templates-v0.2.5", m, python, false); err != nil {
+	if _, err := fetchDockerfile(srv.Client(), defaultRef("templates-v0.2.5"), m, python, false); err != nil {
 		t.Fatal(err)
 	}
 	if hits != after {
@@ -1091,7 +1307,7 @@ func TestEnsureTemplateTreeRefreshReplacesStaleFiles(t *testing.T) {
 	srv := tarballServer(t, old, &hits)
 	m := &Manifest{Tarball: "templates-0.2.5.tar.gz"}
 
-	tree, err := ensureTemplateTree(srv.Client(), "templates-v0.2.5", m, false)
+	tree, err := ensureTemplateTree(srv.Client(), defaultRef("templates-v0.2.5"), m, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1105,7 +1321,7 @@ func TestEnsureTemplateTreeRefreshReplacesStaleFiles(t *testing.T) {
 	fresh := tarGz(t, []tar.Header{dir_("src/"), reg("src/t/Dockerfile")}, []string{"", "FROM new\n"})
 	tarballServer(t, fresh, &hits)
 
-	tree, err = ensureTemplateTree(srv.Client(), "templates-v0.2.5", m, true)
+	tree, err = ensureTemplateTree(srv.Client(), defaultRef("templates-v0.2.5"), m, true)
 	if err != nil {
 		t.Fatal(err)
 	}

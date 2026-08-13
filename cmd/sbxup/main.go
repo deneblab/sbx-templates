@@ -34,7 +34,7 @@ Local templates (no Docker Hub):
   sbxup --build            Build the configured template locally and run it
   sbxup --rebuild          Rebuild even if the local image already exists
   sbxup --update-claude    Rebuild only the Claude Code layer of the local image
-  sbxup --refresh          Re-download the template manifest and Dockerfile
+  sbxup --refresh          Re-check for a newer release and re-download its assets
 
 Parameters:
   --config <path>    Path to YAML config (default: .sbx/sbxup.config.yaml)
@@ -49,7 +49,7 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   cache: .sbx-cache   # optional: mount local cache dir into sandbox
   build:              # optional: build the template locally instead of pulling it
     name: dotnet10
-    release: templates-v0.1.3
+    release: deneblab/sbx-templates@latest   # or @0.1.4 to pin; a bare 0.1.4 works too
 
 Extra arguments are passed through to 'sbx run'.
 `
@@ -304,12 +304,12 @@ func initFlow(o *options) error {
 		return initConfigBody(o.config, body)
 	}
 
-	release, err := resolveTemplatesRelease(client, "")
+	ref, err := resolveTemplatesRelease(client, "", o.refresh)
 	if err != nil {
 		warnf("Cannot reach the template releases (%v) — writing the default registry config.", err)
 		return writeOut(defaultConfigBody)
 	}
-	m, err := loadManifest(client, release, o.refresh)
+	m, err := loadManifest(client, ref, o.refresh)
 	if err != nil {
 		warnf("Cannot read the template manifest (%v) — writing the default registry config.", err)
 		return writeOut(defaultConfigBody)
@@ -332,7 +332,7 @@ func initFlow(o *options) error {
 		return writeOut(defaultConfigBody)
 	}
 
-	return writeOut(buildConfigBody(chosen, release))
+	return writeOut(buildConfigBody(chosen, ref))
 }
 
 // ensureLocalTemplate resolves the configured template from the release, builds it if needed,
@@ -352,11 +352,11 @@ func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
 	}
 
 	client := &http.Client{Timeout: httpClient}
-	release, err := resolveTemplatesRelease(client, pin)
+	ref, err := resolveTemplatesRelease(client, pin, o.refresh)
 	if err != nil {
 		return "", err
 	}
-	m, err := loadManifest(client, release, o.refresh)
+	m, err := loadManifest(client, ref, o.refresh)
 	if err != nil {
 		return "", err
 	}
@@ -364,21 +364,45 @@ func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Printf("Template: %s %s (%s)\n", entry.Short, entry.Version, release)
+	if ref.isDefaultSource() {
+		fmt.Printf("Template: %s %s (%s)\n", entry.Short, entry.Version, ref.Tag)
+	} else {
+		fmt.Printf("Template: %s %s (%s)\n", entry.Short, entry.Version, ref)
+	}
 
 	// Already in the sandbox runtime's store: nothing to download and nothing to build, so
 	// neither the network nor Docker is touched on the common repeat run.
-	tag := entry.LocalTag()
+	tag := entry.LocalTag(ref)
+	warnTemplateMismatch(cfg.Template, entry, tag)
 	if !o.rebuild && !o.updateClaude && !o.refresh && !o.dryRun && sbxTemplateListed(tag) {
 		fmt.Printf("Reusing template: %s\n", tag)
 		return tag, nil
 	}
 
-	dockerfile, err := fetchDockerfile(client, release, m, entry, o.refresh)
+	dockerfile, err := fetchDockerfile(client, ref, m, entry, o.refresh)
 	if err != nil {
 		return "", err
 	}
-	return buildTemplate(dockerfile, entry, release, o.rebuild, o.updateClaude, o.dryRun)
+	return buildTemplate(dockerfile, entry, ref, o.rebuild, o.updateClaude, o.dryRun)
+}
+
+// warnTemplateMismatch reports a `template:` key that disagrees with what the build produces.
+// The built tag always wins, so a stale value is otherwise invisible: a config still naming
+// :0.1.3 runs :0.2.6 without a word. A bare template name matches by identity and stays quiet.
+func warnTemplateMismatch(configured string, entry *TemplateEntry, tag string) {
+	if templateKeyAgrees(configured, entry, tag) {
+		return
+	}
+	warnf("'template: %s' does not match the image this build produces (%s) — the build wins. "+
+		"Update the 'template' key or remove it.", configured, tag)
+}
+
+func templateKeyAgrees(configured string, entry *TemplateEntry, tag string) bool {
+	switch configured {
+	case "", tag, entry.Name, entry.Short:
+		return true
+	}
+	return false
 }
 
 func firstNonEmpty(vals ...string) string {

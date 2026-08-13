@@ -114,8 +114,8 @@ func extractTarGz(data []byte, dest string) (int, error) {
 //
 // Extraction lands in a sibling temp directory that is swapped into place once complete, so an
 // interrupted run can never leave a half-populated tree that a later run would build from.
-func ensureTemplateTree(client *http.Client, tag string, m *Manifest, refresh bool) (string, error) {
-	dir, err := templatesCacheDir(tag)
+func ensureTemplateTree(client *http.Client, ref releaseRef, m *Manifest, refresh bool) (string, error) {
+	dir, err := templatesCacheDir(ref)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +127,7 @@ func ensureTemplateTree(client *http.Client, tag string, m *Manifest, refresh bo
 		}
 	}
 
-	data, err := fetchVerified(client, tag, m.Tarball)
+	data, err := fetchVerified(client, ref, m.Tarball)
 	if err != nil {
 		return "", err
 	}

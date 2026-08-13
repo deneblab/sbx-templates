@@ -57,7 +57,7 @@ clone: false        # optional: true => run on a private in-container git clone
 cache: .sbx-cache   # optional: mount local cache dir into sandbox
 build:              # optional: build the template locally instead of pulling it
   name: dotnet10
-  release: templates-v0.1.3
+  release: deneblab/sbx-templates@latest
 ```
 
 `.sbx/sbxup.config.yaml` is the **only** path read — there is no search order, so there is never a question of which of several files won. `legacyConfigPaths` in `config.go` lists the previously supported names; they are probed only to turn "config not found" into a rename instruction, never loaded.
@@ -71,7 +71,7 @@ When `cache` is set, the directory is created at the project root (if missing) a
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)
 carrying two assets and a `.sha256` for each: a `manifest.json` catalogue built from
 `src/*/template.yaml`, and a `templates-{version}.tar.gz` of `src/`. This stream is separate from
-`sbxup-v*`; `latestRelease(client, prefix)` selects between them.
+`sbxup-v*`; `latestRelease(client, ref, prefix)` selects between them.
 
 ```bash
 sbxup --init                        # pick a template from the latest release
@@ -79,15 +79,44 @@ sbxup                               # builds locally on first run, reuses the im
 sbxup --build --template dotnet10   # build without editing the config
 sbxup --rebuild                     # force a rebuild
 sbxup --update-claude               # rebuild only the claude stage
-sbxup --refresh                     # re-download manifest + tarball
+sbxup --refresh                     # re-check for a newer release, re-download its assets
 
 task templates:manifest             # print the manifest CI would publish
 task templates:stage                # stage the full asset set into ./staging
 ```
 
-Assets are checksum-verified before use and cached at `os.UserCacheDir()/sbxup/templates/<release>/`.
+Assets are checksum-verified before use and cached at
+`os.UserCacheDir()/sbxup/templates/<owner>-<repo>/<release>/`.
 `buildTemplate` uses the same `VERSION` / `SHORT_SHA` / `BUILD_DATE` build-arg contract as
 `build-push.sh --no-push`, so a locally built image carries the same OCI labels as a published one.
+
+### `release:` names a source repository, not just a tag
+
+`parseReleaseRef` turns a `build.release` value into a `releaseRef{Owner, Repo, Tag}`:
+`deneblab/sbx-templates@0.1.4`, `@latest`, a bare `0.1.4` / `templates-v0.1.4` for the default
+repository, or empty for its newest release. **An unrecognised value is a hard error**, never a
+fallback to latest — the key exists to make a build reproducible, so a typo like `lastest` must fail
+rather than quietly float. `owner/repo` is validated before use because it becomes both a URL path
+and a cache directory segment.
+
+Consequences worth keeping in mind when touching this code:
+
+- **`selfUpdate()` is pinned to `defaultRef("")`.** A config may point template builds at a fork; where
+  sbxup replaces its own executable must never follow project configuration.
+- **`repoAPI` / `repoWeb` remain the canonical endpoints** and are what `releaseRef.apiURL()` returns
+  for the default source, so this indirection cannot change where existing installs fetch from.
+  `githubAPI` / `githubWeb` are used only for other repositories.
+- **The cache and the local image tag are both namespaced by source.** Two repositories can publish
+  `templates-v0.1.4`, and the sandbox runtime has a single image store: a fork's build is tagged
+  `<owner>-<template>:<version>` so it cannot overwrite the canonical image. The default source keeps
+  its bare tag, so no existing tag changed.
+- **A resolved `latest` is cached for `latestTTL` (180 h) in `latest.json`.** Order: pin → fresh
+  record → network → stale record with a warning. This is what lets a config carry no version at all
+  and still start offline; without it, dropping the pin would trade a version number for a hard
+  network dependency on every run.
+- **`template:` is cross-checked, not ignored.** With `build:` present the built tag wins, so
+  `warnTemplateMismatch` reports a `template:` key that disagrees rather than letting a stale value
+  sit unnoticed.
 
 ### The release tarball is what sbxup extracts
 

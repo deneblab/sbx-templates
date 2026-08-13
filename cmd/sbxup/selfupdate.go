@@ -23,9 +23,16 @@ const (
 
 // Endpoints are variables rather than constants so tests can point them at a local server;
 // nothing outside the tests reassigns them.
+//
+// repoAPI / repoWeb are the canonical repository — both sbxup's own release stream and the
+// default template source. githubAPI / githubWeb are the hosts a *different* template repository
+// is addressed through (see releaseRef.apiURL).
 var (
 	repoAPI = "https://api.github.com/repos/deneblab/sbx-templates/releases"
 	repoWeb = "https://github.com/deneblab/sbx-templates/releases"
+
+	githubAPI = "https://api.github.com"
+	githubWeb = "https://github.com"
 )
 
 // assetName is the release asset for the running platform, matching the names the release
@@ -42,11 +49,11 @@ type release struct {
 	TagName string `json:"tag_name"`
 }
 
-// latestRelease finds the newest release whose tag carries the given prefix. The repository
-// publishes both sbxup binaries (sbxup-v*) and template Dockerfiles (templates-v*), so
-// /releases/latest is not necessarily the stream the caller wants.
-func latestRelease(client *http.Client, prefix string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, repoAPI+"?per_page=50", nil)
+// latestRelease finds the newest release of ref's repository whose tag carries the given prefix.
+// A repository publishes both sbxup binaries (sbxup-v*) and template Dockerfiles (templates-v*),
+// so /releases/latest is not necessarily the stream the caller wants.
+func latestRelease(client *http.Client, ref releaseRef, prefix string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, ref.apiURL()+"?per_page=50", nil)
 	if err != nil {
 		return "", err
 	}
@@ -56,6 +63,11 @@ func latestRelease(client *http.Client, prefix string) (string, error) {
 		return "", fmt.Errorf("cannot reach GitHub: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// sbxup sends no credentials, so a private repository is indistinguishable from a
+		// missing one — say both rather than reporting a missing release.
+		return "", fmt.Errorf("repository %s/%s not found (it must exist and be public)", ref.Owner, ref.Repo)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub returned %s listing releases", resp.Status)
 	}
@@ -69,7 +81,7 @@ func latestRelease(client *http.Client, prefix string) (string, error) {
 			return r.TagName, nil
 		}
 	}
-	return "", fmt.Errorf("no %s* release found at %s", prefix, repoWeb)
+	return "", fmt.Errorf("no %s* release found at %s", prefix, ref.webURL())
 }
 
 func download(client *http.Client, url string) ([]byte, error) {
@@ -98,7 +110,9 @@ func parseChecksum(data []byte) (string, error) {
 func selfUpdate() error {
 	client := &http.Client{Timeout: httpClient}
 
-	tag, err := latestRelease(client, tagPrefix)
+	// Deliberately pinned to the canonical repository: a config may point template builds at a
+	// fork, but where sbxup replaces its own executable must never follow project configuration.
+	tag, err := latestRelease(client, defaultRef(""), tagPrefix)
 	if err != nil {
 		return err
 	}
