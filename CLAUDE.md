@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-golang124-node24/Dockerfile`** — Go 1.24.2 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
+- **`src/sbx-claude-dotnet10-python-uv/Dockerfile`** — .NET SDK 10.0 + latest CPython via uv; caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/uv`.
 - **`.abcversion.json`** — one AbcVersion project per versioned path (`cmd/sbxup`, `src`, and each `src/sbx-claude-*`); see "Versioning".
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
 - **`cmd/sbxup/`** — Go source for `sbxup`, the cross-platform CLI that reads `.sbx/sbxup.config.yaml` and calls `sbx run`. Single package; versioned by AbcVersion via `.abcversion.json`.
@@ -166,6 +167,7 @@ task build:dotnet10       # build sbx-claude-dotnet10
 task build:dotnet10-node24  # build sbx-claude-dotnet10-node24
 task build:golang124-node24    # build sbx-claude-golang124-node24
 task build:python-uv           # build sbx-claude-python-uv
+task build:dotnet10-python-uv  # build sbx-claude-dotnet10-python-uv
 ```
 
 Direct script usage:
@@ -195,6 +197,7 @@ task update-claude:dotnet10          # dotnet10
 task update-claude:dotnet10-node24   # dotnet10 + Node 24
 task update-claude:golang124-node24  # Go + Node 24
 task update-claude:python-uv         # Python + uv
+task update-claude:dotnet10-python-uv  # .NET 10 + Python/uv
 task update-claude                   # default image (dotnet10)
 ```
 

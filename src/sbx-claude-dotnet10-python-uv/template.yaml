@@ -1,0 +1,6 @@
+# Metadata for the templates-v* release manifest. Adding a template means adding a
+# directory under src/ with a Dockerfile and one of these — nothing else to update.
+# Its version is `abcversion --scope src/<dir>`, which needs no configuration entry.
+name: sbx-claude-dotnet10-python-uv
+short: dotnet10-python-uv
+description: .NET SDK 10.0, latest Python via uv

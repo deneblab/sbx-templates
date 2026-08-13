@@ -183,6 +183,35 @@ tasks:
         vars:
           IMAGE: sbx-claude-python-uv
 
+  # ── dotnet10-python-uv ────────────────────────────────────────────────────
+
+  "version:dotnet10-python-uv":
+    desc: "Show computed semver for sbx-claude-dotnet10-python-uv"
+    cmds:
+      - task: "_version"
+        vars: { SCOPE: "src/sbx-claude-dotnet10-python-uv" }
+
+  "build:dotnet10-python-uv":
+    desc: "Build sbx-claude-dotnet10-python-uv locally"
+    cmds:
+      - task: "_build:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-dotnet10-python-uv
+
+  "push:dotnet10-python-uv":
+    desc: "Build and push sbx-claude-dotnet10-python-uv"
+    cmds:
+      - task: "_push:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-dotnet10-python-uv
+
+  "update-claude:dotnet10-python-uv":
+    desc: "Update Claude Code in sbx-claude-dotnet10-python-uv without rebuilding deps"
+    cmds:
+      - task: "_update-claude:{{OS}}"
+        vars:
+          IMAGE: sbx-claude-dotnet10-python-uv
+
   # ── Versioning (abcversion, one binary on every OS) ───────────────────────
 
   # --scope narrows the commit count to a subtree with no .abcversion.json entry, which is what
