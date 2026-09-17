@@ -1,15 +1,21 @@
 # build-push.ps1 — build (and optionally push) a sandbox image with computed semver.
 # Usage: .\scripts\build\build-push.ps1 [-ImageName NAME] [-NoPush] [-DryRun] [-UpdateClaude]
+#                                        [-DotnetSdkVersion X.Y.Z]
 #   -ImageName NAME  image directory name under src/ (default: sbx-claude-dotnet10)
 #   -NoPush          build and load into local Docker daemon, do not push
 #   -DryRun          print the docker command, do not execute
 #   -UpdateClaude    skip cache for the 'claude' stage only (fast Claude Code update)
+#   -DotnetSdkVersion X.Y.Z
+#                    override the .NET SDK pin for this build (env: DOTNET_SDK_VERSION).
+#                    Only passed to docker when set, so templates without that ARG do not
+#                    warn about an unconsumed build-arg.
 
 param(
     [string]$ImageName = "sbx-claude-dotnet10",
     [switch]$NoPush,
     [switch]$DryRun,
-    [switch]$UpdateClaude
+    [switch]$UpdateClaude,
+    [string]$DotnetSdkVersion = $env:DOTNET_SDK_VERSION
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,12 +52,16 @@ $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
 
 $pushFlag     = if ($NoPush) { "--load" } else { "--push" }
 $noCacheArgs  = if ($UpdateClaude) { @("--no-cache-filter", "claude") } else { @() }
+# Only the .NET templates declare ARG DOTNET_SDK_VERSION; passing it unconditionally would
+# make every other template warn that the build-arg was not consumed.
+$sdkArgs      = if ($DotnetSdkVersion) { @("--build-arg", "DOTNET_SDK_VERSION=$DotnetSdkVersion") } else { @() }
 
 Write-Host "Version       : $version"
 Write-Host "Tag           : $tag"
 Write-Host "SHA           : $shortSha"
 Write-Host "Image         : ${Image}:${tag}"
 Write-Host "Update claude : $UpdateClaude"
+if ($DotnetSdkVersion) { Write-Host "SDK override  : $DotnetSdkVersion" }
 Write-Host ""
 
 if ($DryRun) {
@@ -63,6 +73,7 @@ if ($DryRun) {
     Write-Host "    --build-arg VERSION=$version ``"
     Write-Host "    --build-arg SHORT_SHA=$shortSha ``"
     Write-Host "    --build-arg BUILD_DATE=$buildDate ``"
+    if ($DotnetSdkVersion) { Write-Host "    --build-arg DOTNET_SDK_VERSION=$DotnetSdkVersion ``" }
     Write-Host "    $Context"
     exit 0
 }
@@ -73,6 +84,7 @@ if ($DryRun) {
     --build-arg "VERSION=$version" `
     --build-arg "SHORT_SHA=$shortSha" `
     --build-arg "BUILD_DATE=$buildDate" `
+    @sdkArgs `
     $Context
 
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,10 +1,15 @@
 #!/bin/bash
 # build-push.sh — build (and optionally push) a sandbox image with computed semver.
 # Usage: ./scripts/build/build-push.sh [--image NAME] [--no-push] [--dry-run] [--update-claude]
+#                                      [--dotnet-sdk-version X.Y.Z]
 #   --image NAME      image directory name under src/ (default: sbx-claude-dotnet10)
 #   --no-push         build and load into local Docker daemon, do not push
 #   --dry-run         print the docker command, do not execute
 #   --update-claude   skip cache for the 'claude' stage only (fast Claude Code update)
+#   --dotnet-sdk-version X.Y.Z
+#                     override the .NET SDK pin for this build (env: DOTNET_SDK_VERSION).
+#                     Only passed to docker when set, so templates without that ARG do
+#                     not warn about an unconsumed build-arg.
 
 set -euo pipefail
 
@@ -13,6 +18,7 @@ IMAGE_NAME="sbx-claude-dotnet10"
 NO_PUSH=false
 DRY_RUN=false
 UPDATE_CLAUDE=false
+DOTNET_SDK_VERSION="${DOTNET_SDK_VERSION:-}"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -20,6 +26,7 @@ while [[ $# -gt 0 ]]; do
     --no-push)        NO_PUSH=true; shift ;;
     --dry-run)        DRY_RUN=true; shift ;;
     --update-claude)  UPDATE_CLAUDE=true; shift ;;
+    --dotnet-sdk-version) DOTNET_SDK_VERSION="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -65,11 +72,21 @@ if [ "${UPDATE_CLAUDE}" = true ]; then
   NO_CACHE_FLAG="--no-cache-filter claude"
 fi
 
+# Only the .NET templates declare ARG DOTNET_SDK_VERSION; passing it unconditionally would
+# make every other template warn that the build-arg was not consumed.
+SDK_ARGS=()
+if [ -n "${DOTNET_SDK_VERSION}" ]; then
+  SDK_ARGS=(--build-arg "DOTNET_SDK_VERSION=${DOTNET_SDK_VERSION}")
+fi
+
 echo "Version       : ${version}"
 echo "Tag           : ${tag}"
 echo "SHA           : ${short_sha}"
 echo "Image         : ${IMAGE}:${tag}"
 echo "Update claude : ${UPDATE_CLAUDE}"
+if [ -n "${DOTNET_SDK_VERSION}" ]; then
+  echo "SDK override  : ${DOTNET_SDK_VERSION}"
+fi
 echo ""
 
 if [ "${DRY_RUN}" = true ]; then
@@ -80,6 +97,9 @@ if [ "${DRY_RUN}" = true ]; then
   echo "    --build-arg VERSION=${version} \\"
   echo "    --build-arg SHORT_SHA=${short_sha} \\"
   echo "    --build-arg BUILD_DATE=${build_date_utc} \\"
+  if [ -n "${DOTNET_SDK_VERSION}" ]; then
+    echo "    --build-arg DOTNET_SDK_VERSION=${DOTNET_SDK_VERSION} \\"
+  fi
   echo "    ${CONTEXT}"
   exit 0
 fi
@@ -90,6 +110,7 @@ docker buildx build ${PUSH_FLAG} ${NO_CACHE_FLAG} \
   --build-arg "VERSION=${version}" \
   --build-arg "SHORT_SHA=${short_sha}" \
   --build-arg "BUILD_DATE=${build_date_utc}" \
+  ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} \
   "${CONTEXT}"
 
 echo ""

@@ -6,13 +6,18 @@ Deneblab sandbox templates for Claude Code development environments.
 
 | Image | Extras |
 |-------|--------|
-| [`pkudrel/sbx-claude-dotnet10`](https://hub.docker.com/r/pkudrel/sbx-claude-dotnet10) | .NET SDK 10.0 |
-| [`pkudrel/sbx-claude-dotnet10-node24`](https://hub.docker.com/r/pkudrel/sbx-claude-dotnet10-node24) | .NET SDK 10.0, Node.js 24.x |
+| [`pkudrel/sbx-claude-dotnet10`](https://hub.docker.com/r/pkudrel/sbx-claude-dotnet10) | .NET SDK 10.0.4xx |
+| [`pkudrel/sbx-claude-dotnet10-node24`](https://hub.docker.com/r/pkudrel/sbx-claude-dotnet10-node24) | .NET SDK 10.0.4xx, Node.js 24.x |
 | [`pkudrel/sbx-claude-golang124-node24`](https://hub.docker.com/r/pkudrel/sbx-claude-golang124-node24) | Go 1.24.2, Node.js 24.x |
 | [`pkudrel/sbx-claude-python-uv`](https://hub.docker.com/r/pkudrel/sbx-claude-python-uv) | Latest Python via [uv](https://docs.astral.sh/uv/) |
-| `sbx-claude-dotnet10-python-uv` | .NET SDK 10.0, latest Python via [uv](https://docs.astral.sh/uv/) — release-only, no Docker Hub image |
+| `sbx-claude-dotnet10-python-uv` | .NET SDK 10.0.4xx, latest Python via [uv](https://docs.astral.sh/uv/) — release-only, no Docker Hub image |
 
 All images extend `docker/sandbox-templates:claude-code`.
+
+The .NET images install the SDK from `dotnet-install.sh`, pinned by `ARG DOTNET_SDK_VERSION`
+(currently `10.0.401`), because both apt sources cap at the 10.0.1xx band — a `global.json`
+pinning a 4xx SDK cannot be satisfied from apt. Override for one build with
+`build-push.sh --dotnet-sdk-version X.Y.Z` (PowerShell: `-DotnetSdkVersion`).
 
 > **Docker Hub publishing is no longer automatic.** Templates are distributed as Dockerfiles via the
 > `templates-v*` release and built locally by `sbxup` — see

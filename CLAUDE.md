@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `sbx-templates` is a Deneblab repository for Claude Code sandbox Docker templates. It contains:
 
-- **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
-- **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
+- **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0.4xx; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
+- **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0.4xx + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-golang124-node24/Dockerfile`** — Go 1.24.2 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
-- **`src/sbx-claude-dotnet10-python-uv/Dockerfile`** — .NET SDK 10.0 + latest CPython via uv; caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/uv`.
+- **`src/sbx-claude-dotnet10-python-uv/Dockerfile`** — .NET SDK 10.0.4xx + latest CPython via uv; caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/uv`.
 - **`.abcversion.json`** — one AbcVersion project per versioned path (`cmd/sbxup`, `src`, and each `src/sbx-claude-*`); see "Versioning".
 - **`scripts/build/build-push.sh` / `build-push.ps1`** — build and push the Docker image with version labels.
 - **`cmd/sbxup/`** — Go source for `sbxup`, the cross-platform CLI that reads `.sbx/sbxup.config.yaml` and calls `sbx run`. Single package; versioned by AbcVersion via `.abcversion.json`.
@@ -19,6 +19,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`install.sh` / `install.ps1`** — one-line installers that fetch a checksum-verified `sbxup` binary from GitHub Releases.
 - **`Taskfile.yml`** — cross-platform task runner (`version`, `build`, `push`, `sbxup:*`).
 - **`.agents/`** — issue tracking and agent task system. Project short ID: `SBXT`.
+
+### The .NET SDK comes from `dotnet-install.sh`, not apt
+
+The three .NET templates pin the SDK with `ARG DOTNET_SDK_VERSION` (currently **10.0.401**) and
+install it via the official `dotnet-install.sh` into `/usr/lib/dotnet`. A reader would reasonably
+assume apt, so the reason matters:
+
+**Both apt sources cap at the 10.0.1xx feature band.** Ubuntu 26.04's own archive ships
+`dotnet-sdk-10.0` at `10.0.112`, and `ppa:dotnet/backports` publishes the same 1xx band. A project
+whose `global.json` pins a 4xx SDK (`10.0.400`) is therefore **unsatisfiable from apt by
+construction** — `rollForward: latestPatch` stays inside the pinned band and rejects `10.0.112`.
+No amount of rebuilding or apt-pinning changes that; only the install script offers 4xx.
+
+Consequences worth keeping in mind when touching these Dockerfiles:
+
+- **`apt-get install dotnet-runtime-10.0` is there for its native dependencies**, not for the
+  runtime itself. `dotnet-install.sh` unpacks a tarball and installs no native libraries; letting
+  dpkg own that closure (`libicu` above all) is what keeps the image working across base-image
+  upgrades. Hand-listing `libicu78` instead would silently break the day Ubuntu renames it.
+- **`ppa:dotnet/backports` and `software-properties-common` are gone** from all three templates.
+  The PPA offered nothing the 26.04 archive lacks, and nothing now installs the SDK from apt.
+- **The `ARG` is the cache key.** An unpinned `apt-get install` sits in a cached layer that can
+  never invalidate itself, so the SDK silently froze at whatever was current when the layer was
+  first built. Bumping `DOTNET_SDK_VERSION` necessarily rebuilds that layer.
+- **Each `deps` stage asserts `dotnet --version` equals the pin**, so a silent fall back to another
+  band fails the build instead of surfacing in a user's sandbox.
+- **`build-push.sh --dotnet-sdk-version X.Y.Z`** (or `DOTNET_SDK_VERSION` in the environment)
+  overrides the pin for one build; `build-push.ps1` takes `-DotnetSdkVersion`. The flag is passed to
+  `docker` **only when set**, because `golang124-node24` and `python-uv` declare no such `ARG` and
+  would otherwise warn about an unconsumed build-arg. `sbxup` never passes it, so the Dockerfile
+  default governs there.
 
 ## Running a Sandbox
 
