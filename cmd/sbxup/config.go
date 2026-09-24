@@ -58,6 +58,9 @@ type Config struct {
 	Agent   string
 	Clone   bool
 	Cache   string
+	// Mounts are extra host directories, each `path` or `path:ro`. Kept raw: they are resolved and
+	// checked at run time, when the project directory and the home directory are known.
+	Mounts []string
 }
 
 // findConfig returns the config path if it exists, or "" when it does not.
@@ -109,6 +112,12 @@ func loadConfig(path string) (*Config, error) {
 			cfg.Cache = scalarString(val)
 		case "clone":
 			cfg.Clone = isTruthy(val)
+		case "mounts":
+			m, err := parseMounts(val, path)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Mounts = m
 		case "build":
 			b, err := parseBuild(val, path)
 			if err != nil {
@@ -119,7 +128,7 @@ func loadConfig(path string) (*Config, error) {
 			warnf("Key 'branch' in %s is no longer supported ('sbx run' dropped --branch). "+
 				"Rename it to 'clone: true|false'.", path)
 		default:
-			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache)", key, path)
+			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache, mounts)", key, path)
 		}
 	}
 
@@ -146,6 +155,31 @@ func loadConfig(path string) (*Config, error) {
 		cfg.Template = template
 	}
 	return cfg, nil
+}
+
+// parseMounts reads the `mounts:` list. A single string is accepted as a list of one.
+func parseMounts(val any, path string) ([]string, error) {
+	switch t := val.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		if strings.TrimSpace(t) == "" {
+			return nil, nil
+		}
+		return []string{strings.TrimSpace(t)}, nil
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			s, ok := item.(string)
+			if !ok || strings.TrimSpace(s) == "" {
+				return nil, fmt.Errorf("each entry of 'mounts' in %s must be a path such as '~/shared-libs:ro', got %v", path, item)
+			}
+			out = append(out, strings.TrimSpace(s))
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("'mounts' in %s must be a list of paths", path)
+	}
 }
 
 // checkTemplateName rejects an image reference where a template name belongs. Before templates

@@ -135,6 +135,35 @@ When `clone: true` (or `--clone`), `sbxup` passes `--clone` to `sbx run` so the 
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace. If not set, no cache mounting occurs.
 
+### `mounts:` — extra host directories (`mounts.go`)
+
+A list of `path` or `path:ro`, the syntax `sbx run` already takes for an extra workspace; `buildRunArgs`
+receives the cache and the mounts as one `workspaces` list and always emits `.` first when it is not
+empty (otherwise the first extra directory becomes the primary workspace). Things worth keeping in mind:
+
+- **sbxup adds care, not translation.** The config lives in the repository and the agent runs with
+  permissions off, so a project can arrive with someone else's mounts. Layer 1, `checkMountAllowed`, is a
+  hard refusal (with or without `:ro`, since a read leaks) for a path that is or contains the home directory
+  (which takes in a filesystem root) or that equals, contains or lies inside a `credentialDirs` entry. It is
+  about the home directory itself: `~/shared-libs` passes. It judges the path alone, after
+  `resolveExisting` has followed symlinks, so a missing directory and `~/link -> ~/.ssh` are both caught.
+  Layer 2, `approveMounts`, asks once for every mount outside the project.
+- **The approval is stored in the user cache, never in the repo** (`sbxup/mounts/<key>.json`; the file's
+  existence is the approval), keyed by project and the exact set of `path|mode` entries, so a repository
+  cannot approve itself and switching `:ro` to writable is a new question. `:ro` does not waive it.
+- **No is not an error, having no way to answer is.** Declining drops the outside mounts and starts anyway;
+  no terminal, or input that ends before anything is typed, refuses. Nothing is asked when an existing
+  sandbox is resumed (its mounts are fixed and the run args are dropped, so `prepareMounts` prints a note
+  about `sbx rm`) or under `--dry-run`. Checks and approval run before a template is built, so a refusal
+  costs no minutes.
+- **The suffix rule** (`parseMountSpec`): the text after the last `:` when it holds no path separator and
+  the colon is not a drive-letter colon. `:ro` is passed on, `:rw` is accepted and dropped (sbx knows no
+  such suffix), anything else is an error, so `:r0` cannot mount a directory writable. `D:\data` and
+  `D:\data:ro` both parse.
+- **Write access is the default**, which assumes an extra directory without `:ro` is writable in sbx. The
+  docs only say "append `:ro` to make it read-only"; this has not been verified on a real sbx.
+- **The mounted path is the symlink-resolved one**, so what is checked is what is mounted.
+
 ## Local Templates Without Docker Hub
 
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)

@@ -51,13 +51,18 @@ func resolveSandboxName(candidate string) string {
 
 // buildRunArgs assembles the `sbx run` argument list. Kept free of side effects so tests can
 // assert the exact command line, which is the cross-platform parity criterion.
-func buildRunArgs(template, agent string, clone bool, cachePath string, extra []string) []string {
+//
+// workspaces are the extra directories to mount (the cache, then the config's mounts), already in
+// the form sbx takes: `path` or `path:ro`. The project itself is emitted first, as ".", whenever
+// there are any — otherwise the first extra directory would become the primary workspace.
+func buildRunArgs(template, agent string, clone bool, workspaces []string, extra []string) []string {
 	args := []string{"run", "--template", template, agent}
 	if clone {
 		args = append(args, "--clone")
 	}
-	if cachePath != "" {
-		args = append(args, ".", cachePath)
+	if len(workspaces) > 0 {
+		args = append(args, ".")
+		args = append(args, workspaces...)
 	}
 	args = append(args, extra...)
 	return args

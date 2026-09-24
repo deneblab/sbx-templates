@@ -111,6 +111,45 @@ release and does not pull one of ours from a registry. A value like
 (`template: sbx-claude-dotnet10`). Old configs that use a `build:` block still load, with a warning:
 `build.name` becomes `template` and `build.release` becomes `version`.
 
+### Mounting more directories
+
+`mounts` lists extra host directories to make available in the sandbox, in the syntax `sbx run` takes
+for an extra workspace — `path`, or `path:ro` for read-only:
+
+```yaml
+template: dotnet10
+mounts:
+  - ~/shared-libs:ro      # read-only: the right choice for anything that is only a source
+  - ../docs               # relative to the project directory; writable
+  - D:\data\models:ro     # a Windows path
+```
+
+- **Paths.** `~` is your home directory; a relative path is relative to the project directory (like
+  `cache`); there are no environment variables. Inside the sandbox a directory appears at the same
+  absolute path as on the host (on Windows `C:\x` shows up as `/c/x`).
+- **Modes.** Without a suffix a directory is **writable**. `:ro` is passed to `sbx`; `:rw` is accepted
+  for a config that wants to say so, and is dropped before `sbx` sees it. Any other suffix is an error,
+  so a typo such as `:r0` cannot mount a directory writable by accident. The agent runs with permissions
+  off, so a writable mount can be changed or deleted without asking; every mount and its mode is printed
+  at start-up (`Mount: /home/u/shared-libs (read-only)`).
+- **A missing directory** is a warning and is skipped: the config is shared and the directory may exist
+  on one machine only. The project and the `cache` directory are never mounted twice.
+- **Two guards**, because a repository can arrive with someone else's config:
+  1. **Refusal.** sbxup will not mount your home directory (or a parent of it, or a filesystem root) or a
+     credential directory — `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.claude`, `~/.azure`, `~/.kube`,
+     `~/.docker`, `~/.password-store`, `~/.config/gcloud`, `~/.config/gh` — nor anything inside or above
+     one, with or without `:ro`, since reading leaks as well. The rest of your home directory is fine:
+     `~/shared-libs` is allowed. Symlinks are followed before the check, and the directory need not
+     exist. The list catches accidents; it is not complete.
+  2. **Approval.** Mounts outside the project need your approval once. The prompt lists each with its
+     mode; `:ro` does not skip it. The answer is remembered in your user cache (not in the repository) for
+     that project and that exact list, so adding a directory or changing `:ro` to writable asks again.
+     Saying no starts the sandbox without those mounts and asks again next time; with no terminal it is
+     refused, and running sbxup once from a terminal approves it.
+- **They apply when a sandbox is created.** `sbxup` resumes an existing sandbox with no run arguments, so
+  a changed `mounts` reaches it only after `sbx rm <name>` (that deletes the sandbox's own state, not your
+  project files). sbxup prints a note about it, and asks nothing, when it resumes.
+
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
 
 ## Run without Docker Hub

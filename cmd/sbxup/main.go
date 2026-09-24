@@ -47,9 +47,15 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   agent: claude        # optional (default: claude)
   clone: false         # optional: true => run on a private in-container git clone
   cache: .sbx-cache    # optional: mount local cache dir into sandbox
+  mounts:              # optional: extra host directories; ':ro' for read-only
+    - ~/shared-libs:ro
+    - ../docs
 
 When a newer version of a template is available, sbxup keeps running the one you have and asks
 before building the new one. Without a terminal it does not ask; --update builds it.
+
+Mounts are checked before anything is built: the home directory and credential directories
+(~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
 
 Extra arguments are passed through to 'sbx run'.
 `
@@ -239,6 +245,15 @@ func run(argv []string) error {
 	// Looked up before the template so an update offer can say the sandbox will keep its image;
 	// the same answer decides below whether to resume it.
 	existing := resolveSandboxName(candidate)
+	cachePath := ""
+	if cfg.Cache != "" {
+		cachePath = filepath.Join(cwd, cfg.Cache)
+	}
+	// Mounts are checked and approved before a template is built, so a refusal costs no minutes.
+	mounts, err := prepareMounts(cfg.Mounts, cwd, cachePath, existing != "", o.dryRun)
+	if err != nil {
+		return err
+	}
 	template, err := ensureLocalTemplate(name, cfg.Version, existing, o)
 	if err != nil {
 		return err
@@ -256,9 +271,7 @@ func run(argv []string) error {
 		fmt.Println("Clone mode: on (--clone)")
 	}
 
-	cachePath := ""
-	if cfg.Cache != "" {
-		cachePath = filepath.Join(cwd, cfg.Cache)
+	if cachePath != "" {
 		if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 			if !o.dryRun {
 				if err := os.MkdirAll(cachePath, 0o755); err != nil {
@@ -270,7 +283,14 @@ func run(argv []string) error {
 		fmt.Printf("Cache: %s\n", cachePath)
 	}
 
-	args := buildRunArgs(template, agent, cloneEnabled, cachePath, o.extra)
+	var workspaces []string
+	if cachePath != "" {
+		workspaces = append(workspaces, cachePath)
+	}
+	for _, m := range mounts {
+		workspaces = append(workspaces, m.Spec())
+	}
+	args := buildRunArgs(template, agent, cloneEnabled, workspaces, o.extra)
 
 	if o.dryRun {
 		fmt.Printf("[dry-run] sbx %s\n", strings.Join(args, " "))
