@@ -103,6 +103,8 @@ version: 0.2.8       # optional: pin the release (default: latest); a fork: owne
 agent: claude        # optional (default: claude)
 clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
+mounts:              # optional: extra host directories; ':ro' for read-only (see below)
+  - ~/shared-libs:ro
 ```
 
 `template` is a **name**, never an image reference: `sbxup` builds every template locally from the
@@ -110,6 +112,99 @@ release and does not pull one of ours from a registry. A value like
 `docker.io/pkudrel/sbx-claude-dotnet10:latest` is an error that names the replacement
 (`template: sbx-claude-dotnet10`). Old configs that use a `build:` block still load, with a warning:
 `build.name` becomes `template` and `build.release` becomes `version`.
+
+### Example configs
+
+The template is chosen by its short name: `dotnet10`, `dotnet10-node24`, `dotnet10-python-uv`,
+`golang124-node24` or `python-uv`. Every key except `template` is optional.
+
+**Minimal** — the latest release, everything else at its default:
+
+```yaml
+template: dotnet10
+```
+
+**A different stack, on a private clone, with a package cache:**
+
+```yaml
+template: golang124-node24
+clone: true              # the agent works on a private in-container git clone of the repo
+cache: .sbx-cache        # created at the project root if it is missing
+```
+
+**Frozen environment** — stay on one release until you change the line:
+
+```yaml
+template: dotnet10
+version: 0.2.6           # or templates-v0.2.6; without it sbxup follows the latest
+```
+
+**Shared libraries and docs from outside the project:**
+
+```yaml
+template: dotnet10
+mounts:
+  - ~/shared-libs:ro     # read-only: the right choice for anything that is only a source
+  - ../docs              # relative to the project directory; writable
+```
+
+**On Windows** — backslashes need no quotes:
+
+```yaml
+template: dotnet10
+mounts:
+  - D:\data\models:ro
+  - ~\docs
+```
+
+**Everything at once:**
+
+```yaml
+template: dotnet10
+version: 0.2.6
+agent: claude            # the default
+clone: false             # the default
+cache: .sbx-cache
+mounts:
+  - ~/shared-libs:ro
+  - ../docs
+```
+
+**Templates from a fork** — the same `version` key, with the repository in front:
+
+```yaml
+template: dotnet10
+version: myfork/sbx-templates@0.1.4
+```
+
+**Moving an old config over.** The registry form no longer works; `build:` still loads, with a warning.
+
+```yaml
+# before: an image reference (now an error that names the replacement)
+template: docker.io/pkudrel/sbx-claude-dotnet10:latest
+agent: claude
+```
+```yaml
+# after
+template: dotnet10
+```
+
+```yaml
+# before: the same template and release stated three times
+template: sbx-claude-dotnet10:0.2.8
+agent: claude
+clone: false
+build:
+  name: dotnet10
+  release: templates-v0.2.8
+```
+```yaml
+# after
+template: dotnet10
+version: 0.2.8           # keep it only if you want the release frozen
+```
+
+`agent: claude` and `clone: false` can simply be dropped: they are the defaults.
 
 ### Mounting more directories
 
