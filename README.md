@@ -19,6 +19,12 @@ The .NET images install the SDK from `dotnet-install.sh`, pinned by `ARG DOTNET_
 pinning a 4xx SDK cannot be satisfied from apt. Override for one build with
 `build-push.sh --dotnet-sdk-version X.Y.Z` (PowerShell: `-DotnetSdkVersion`).
 
+**No Claude attribution.** Every image writes `/etc/claude-code/managed-settings.json` with empty
+`attribution.commit` and `attribution.pr`, so Claude Code adds no `Co-Authored-By: Claude` trailer to
+commits and no "Generated with Claude Code" line to pull requests. It is a *managed* setting: it sits
+above user and project settings, so a project's own `.claude/settings.json` cannot turn attribution back
+on. To get it back, rebuild the template without that block in its `Dockerfile`.
+
 > **Docker Hub publishing is no longer automatic.** Templates are distributed as Dockerfiles via the
 > `templates-v*` release and built locally by `sbxup` — see
 > [Run without Docker Hub](#run-without-docker-hub). The images above still exist but are frozen at

@@ -42,6 +42,15 @@ RUN mkdir -p \
     /workspace/.sbx-cache/uv \
  && chown -R agent:agent /home/agent /workspace
 
+# Claude Code managed settings: no Claude attribution (Co-Authored-By trailer, "Generated with"
+# line) in commits or PR descriptions. Managed settings sit above user and project settings, so
+# this holds even though sbx recreates ~/.claude at sandbox start. Lives in the deps stage so
+# --update-claude (which re-runs only the claude stage) keeps it. Rebuild without this block to
+# get attribution back.
+RUN mkdir -p /etc/claude-code \
+ && printf '%s\n' '{"attribution":{"commit":"","pr":""}}' > /etc/claude-code/managed-settings.json \
+ && chmod 0644 /etc/claude-code/managed-settings.json
+
 USER agent
 
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1

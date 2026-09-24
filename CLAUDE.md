@@ -51,6 +51,23 @@ Consequences worth keeping in mind when touching these Dockerfiles:
   would otherwise warn about an unconsumed build-arg. `sbxup` never passes it, so the Dockerfile
   default governs there.
 
+### Managed settings switch off Claude attribution
+
+Every template's `deps` stage writes `/etc/claude-code/managed-settings.json`
+(`{"attribution":{"commit":"","pr":""}}`, mode `0644`), so Claude Code adds no `Co-Authored-By`
+trailer to commits and no "Generated with Claude Code" line to PRs. Consequences worth keeping in mind:
+
+- **It is inlined, not shared.** `sbxup` and `build-push.*` give each build only `src/<name>/` as its
+  context, so a file under a shared `src/` directory is unreachable. The same one-line `RUN` sits in all
+  five Dockerfiles, just before the first `USER agent`; keep them identical when editing one.
+- **`/etc`, not `~/.claude`.** `~/.claude/settings.json` inside a sandbox is written at sandbox start and
+  does not survive `sbx rm`, so baking it into the image is unreliable. sbx does not touch `/etc`.
+- **It lives in `deps`**, so `--update-claude` (which re-runs only the `claude` stage) keeps it.
+- **Managed settings outrank user and project settings.** That is intended; a user who wants attribution
+  back must rebuild the template without the block.
+- **Verify** with `docker run --rm <image> cat /etc/claude-code/managed-settings.json`, and by making a
+  test commit with Claude in a sandbox built from the image.
+
 ## Running a Sandbox
 
 `sbxup` is a single binary for Linux, macOS, and Windows — no profile edits, no dot-sourcing.
