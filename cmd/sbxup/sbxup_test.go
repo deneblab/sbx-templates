@@ -133,7 +133,8 @@ func TestLegacyConfigIsReportedNotLoaded(t *testing.T) {
 
 func TestLoadConfig(t *testing.T) {
 	chdir(t)
-	write(t, "c.yaml", `template: docker.io/pkudrel/img:latest
+	write(t, "c.yaml", `template: dotnet10
+version: 0.2.8
 agent: claude
 clone: true
 cache: .sbx-cache
@@ -142,8 +143,11 @@ cache: .sbx-cache
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Template != "docker.io/pkudrel/img:latest" {
+	if cfg.Template != "dotnet10" {
 		t.Errorf("Template = %q", cfg.Template)
+	}
+	if cfg.Version != "0.2.8" {
+		t.Errorf("Version = %q", cfg.Version)
 	}
 	if cfg.Agent != "claude" {
 		t.Errorf("Agent = %q", cfg.Agent)
@@ -160,15 +164,18 @@ func TestLoadConfigCommentsAndQuotes(t *testing.T) {
 	chdir(t)
 	// The grep/sed approach in the PowerShell version mishandles a '#' inside a quoted
 	// value; a real parser keeps it.
-	write(t, "c.yaml", `template: "docker.io/pkudrel/img:latest"   # trailing comment
-agent: claude
+	write(t, "c.yaml", `template: "dotnet10"   # trailing comment
+version: "0.2.8 # not a comment"
 `)
 	cfg, err := loadConfig("c.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Template != "docker.io/pkudrel/img:latest" {
+	if cfg.Template != "dotnet10" {
 		t.Errorf("Template = %q", cfg.Template)
+	}
+	if cfg.Version != "0.2.8 # not a comment" {
+		t.Errorf("Version = %q", cfg.Version)
 	}
 }
 
@@ -197,7 +204,8 @@ func TestInitConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Agent != "claude" || cfg.Clone {
+		// No agent, clone or version: the defaults are not written down.
+		if cfg.Template != "dotnet10" || cfg.Agent != "" || cfg.Clone || cfg.Version != "" {
 			t.Fatalf("unexpected default config: %+v", cfg)
 		}
 	})
@@ -656,23 +664,6 @@ func TestResolveTemplatesReleaseFallsBackToAStaleCache(t *testing.T) {
 	}
 }
 
-func TestTemplateKeyAgrees(t *testing.T) {
-	entry := &TemplateEntry{Name: "sbx-claude-dotnet10", Short: "dotnet10", Version: "0.2.6"}
-	const tag = "sbx-claude-dotnet10:0.2.6"
-
-	for _, ok := range []string{"", tag, "sbx-claude-dotnet10", "dotnet10"} {
-		if !templateKeyAgrees(ok, entry, tag) {
-			t.Errorf("templateKeyAgrees(%q) = false, want true", ok)
-		}
-	}
-	// The stale pin that started this issue: the build wins, so it must not pass unremarked.
-	for _, bad := range []string{"sbx-claude-dotnet10:0.1.3", "docker.io/pkudrel/sbx-claude-dotnet10:latest"} {
-		if templateKeyAgrees(bad, entry, tag) {
-			t.Errorf("templateKeyAgrees(%q) = true, want a warning", bad)
-		}
-	}
-}
-
 func TestLatestReleaseByPrefix(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Newest first, mixing both release streams — the same shape the GitHub API returns.
@@ -780,10 +771,12 @@ func TestFetchVerified(t *testing.T) {
 	})
 }
 
-func TestLoadConfigBuildBlock(t *testing.T) {
+func TestLoadConfigBuildBlockIsFoldedIn(t *testing.T) {
 	chdir(t)
 
 	t.Run("mapping form", func(t *testing.T) {
+		// The stale image tag in `template:` is what used to drift; the block wins and it is not
+		// validated, since it never named a template.
 		write(t, "c.yaml", `template: sbx-claude-dotnet10:0.1.2
 agent: claude
 build:
@@ -794,8 +787,8 @@ build:
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Build == nil || cfg.Build.Name != "dotnet10" || cfg.Build.Release != "templates-v0.1.3" {
-			t.Fatalf("Build = %+v", cfg.Build)
+		if cfg.Template != "dotnet10" || cfg.Version != "templates-v0.1.3" {
+			t.Fatalf("Template = %q, Version = %q", cfg.Template, cfg.Version)
 		}
 	})
 
@@ -805,8 +798,8 @@ build:
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Build == nil || cfg.Build.Name != "dotnet10" {
-			t.Fatalf("Build = %+v", cfg.Build)
+		if cfg.Template != "dotnet10" || cfg.Version != "" {
+			t.Fatalf("Template = %q, Version = %q", cfg.Template, cfg.Version)
 		}
 	})
 
@@ -817,16 +810,59 @@ build:
 		}
 	})
 
-	t.Run("absent build block leaves the registry flow untouched", func(t *testing.T) {
-		write(t, "c.yaml", "template: docker.io/pkudrel/img:latest\nagent: claude\n")
-		cfg, err := loadConfig("c.yaml")
-		if err != nil {
-			t.Fatal(err)
+	t.Run("version beside build.release must agree", func(t *testing.T) {
+		write(t, "c.yaml", "build:\n  name: dotnet10\n  release: 0.1.3\nversion: 0.2.0\n")
+		if _, err := loadConfig("c.yaml"); err == nil {
+			t.Fatal("expected an error when version and build.release disagree")
 		}
-		if cfg.Build != nil {
-			t.Fatalf("Build = %+v, want nil", cfg.Build)
+		write(t, "c.yaml", "build:\n  name: dotnet10\n  release: 0.1.3\nversion: 0.1.3\n")
+		if _, err := loadConfig("c.yaml"); err != nil {
+			t.Fatalf("the same value twice is harmless: %v", err)
 		}
 	})
+}
+
+func TestLoadConfigRejectsAnImageReference(t *testing.T) {
+	chdir(t)
+	for _, ref := range []string{
+		"docker.io/pkudrel/sbx-claude-dotnet10:latest",
+		"pkudrel/sbx-claude-dotnet10",
+		"sbx-claude-dotnet10:0.2.8",
+		"sbx-claude-dotnet10@sha256:abc",
+	} {
+		write(t, "c.yaml", "template: "+ref+"\n")
+		_, err := loadConfig("c.yaml")
+		if err == nil {
+			t.Errorf("template %q was accepted", ref)
+			continue
+		}
+		// The error must name the replacement, or the user is left guessing what changed.
+		if !strings.Contains(err.Error(), "template: sbx-claude-dotnet10") {
+			t.Errorf("template %q: error does not suggest the bare name: %v", ref, err)
+		}
+	}
+}
+
+func TestCheckTemplateName(t *testing.T) {
+	for _, ok := range []string{"dotnet10", "sbx-claude-dotnet10", "dotnet10-node24", "python-uv"} {
+		if err := checkTemplateName(ok, "test"); err != nil {
+			t.Errorf("checkTemplateName(%q) = %v, want nil", ok, err)
+		}
+	}
+	err := checkTemplateName("docker.io/x/y:1", "--template")
+	if err == nil || !strings.Contains(err.Error(), "--template") {
+		t.Errorf("error should say where the value came from: %v", err)
+	}
+	for in, want := range map[string]string{
+		"docker.io/pkudrel/sbx-claude-python-uv:latest": "sbx-claude-python-uv",
+		"sbx-claude-dotnet10:0.2.8":                     "sbx-claude-dotnet10",
+		"host:5000/team/img@sha256:abc":                 "img",
+		"plain":                                         "plain",
+	} {
+		if got := suggestTemplateName(in); got != want {
+			t.Errorf("suggestTemplateName(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestBuildConfigBodyRoundTrip(t *testing.T) {
@@ -836,37 +872,47 @@ func TestBuildConfigBodyRoundTrip(t *testing.T) {
 		Short:   "dotnet10",
 		Version: "0.1.2",
 	}
-	write(t, "c.yaml", buildConfigBody(&entry, defaultRef("templates-v0.2.6")))
 
-	cfg, err := loadConfig("c.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// No version anywhere in the generated config: that requirement is the whole issue.
-	if cfg.Template != "sbx-claude-dotnet10" {
-		t.Errorf("Template = %q, want the bare template name", cfg.Template)
-	}
-	if cfg.Agent != "claude" {
-		t.Errorf("Agent = %q", cfg.Agent)
-	}
-	if cfg.Build == nil || cfg.Build.Name != "sbx-claude-dotnet10" {
-		t.Fatalf("Build = %+v", cfg.Build)
-	}
-	if cfg.Build.Release != "deneblab/sbx-templates@latest" {
-		t.Errorf("Build.Release = %q, want a floating source@latest", cfg.Build.Release)
-	}
-	if strings.Contains(cfg.Build.Release, "0.2.6") {
-		t.Errorf("--init pinned a version: %q", cfg.Build.Release)
-	}
+	t.Run("default source", func(t *testing.T) {
+		body := buildConfigBody(&entry, defaultRef("templates-v0.2.6"))
+		write(t, "c.yaml", body)
 
-	// And what it writes must resolve back to the release it was generated from.
-	ref, err := parseReleaseRef(cfg.Build.Release)
-	if err != nil {
-		t.Fatalf("generated config does not parse: %v", err)
-	}
-	if ref.Owner != defaultOwner || ref.Repo != defaultRepo || ref.Tag != "" {
-		t.Errorf("parsed ref = %+v", ref)
-	}
+		cfg, err := loadConfig("c.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Template != "dotnet10" {
+			t.Errorf("Template = %q, want the short template name", cfg.Template)
+		}
+		// Nothing pinned and no defaults written: that requirement is the whole point.
+		if cfg.Version != "" || cfg.Agent != "" || cfg.Clone {
+			t.Errorf("the generated config states a default: %+v", cfg)
+		}
+		// The pin is there for the user to uncomment, as a release version, not the image's.
+		if !strings.Contains(body, "# version: 0.2.6") {
+			t.Errorf("no commented pin example in:\n%s", body)
+		}
+		if strings.Contains(body, "0.1.2") {
+			t.Errorf("the example pin used the image version instead of the release:\n%s", body)
+		}
+	})
+
+	t.Run("fork keeps its source", func(t *testing.T) {
+		fork := releaseRef{Owner: "someone", Repo: "sbx-templates", Tag: "templates-v0.3.0"}
+		write(t, "c.yaml", buildConfigBody(&entry, fork))
+		cfg, err := loadConfig("c.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Without an active version the config would quietly build the canonical template.
+		ref, err := parseReleaseRef(cfg.Version)
+		if err != nil {
+			t.Fatalf("generated config does not parse: %v", err)
+		}
+		if ref.Owner != "someone" || ref.Repo != "sbx-templates" || ref.Tag != "" {
+			t.Errorf("parsed ref = %+v, want the fork at latest", ref)
+		}
+	})
 }
 
 func TestInitConfigBodyNeverClobbers(t *testing.T) {

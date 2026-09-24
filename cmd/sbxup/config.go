@@ -24,14 +24,18 @@ var legacyConfigPaths = []string{
 	"sbx-runner.yaml",
 }
 
-const defaultConfigBody = `template: docker.io/pkudrel/sbx-claude-dotnet10:latest
-agent: claude
-clone: false
+// defaultAgent applies when neither the config nor --agent names one: every template is a
+// sbx-claude-* image, so the key would only ever say the same thing.
+const defaultAgent = "claude"
+
+// defaultConfigBody is what --init writes when it cannot list the release (no network, no
+// terminal). It needs no network to be valid: a template is just a name, resolved on first run.
+const defaultConfigBody = `template: dotnet10
 `
 
-// BuildConfig is the optional `build:` block. Its presence is what marks a template as
-// locally built rather than pulled: with it set, sbxup builds the named template from the
-// templates-v* release and runs the resulting local image.
+// BuildConfig is the deprecated `build:` block, still read so existing configs keep working.
+// It is folded into Config.Template and Config.Version: every template is built locally now, so
+// the block no longer marks anything. New configs write `template:` and `version:` instead.
 type BuildConfig struct {
 	Name string // template name or short alias, e.g. "dotnet10"
 	// Release names the source repository and the release, in any form parseReleaseRef
@@ -43,11 +47,17 @@ type BuildConfig struct {
 // Config is the resolved sbxup.yaml. Clone is decoded leniently because the PowerShell
 // version accepted true/1/yes/on as strings as well as a real YAML boolean.
 type Config struct {
+	// Template names a template from the templates-v* release, e.g. "dotnet10". It is always
+	// built locally; sbxup never pulls one of our images from a registry.
 	Template string
-	Agent    string
-	Clone    bool
-	Cache    string
-	Build    *BuildConfig
+	// Version pins the release the template comes from, in any form parseReleaseRef accepts:
+	// "0.2.8", "templates-v0.2.8", "latest", or "owner/repo@0.2.8" for a fork. Empty floats at
+	// the newest release. It pins the release, not the image version: the two counters are
+	// independent, which is why the start-up line prints both.
+	Version string
+	Agent   string
+	Clone   bool
+	Cache   string
 }
 
 // findConfig returns the config path if it exists, or "" when it does not.
@@ -83,10 +93,16 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	cfg := &Config{}
+	var (
+		build    *BuildConfig
+		template string
+	)
 	for key, val := range raw {
 		switch strings.ToLower(key) {
 		case "template":
-			cfg.Template = scalarString(val)
+			template = scalarString(val)
+		case "version":
+			cfg.Version = scalarString(val)
 		case "agent":
 			cfg.Agent = scalarString(val)
 		case "cache":
@@ -98,15 +114,66 @@ func loadConfig(path string) (*Config, error) {
 			if err != nil {
 				return nil, err
 			}
-			cfg.Build = b
+			build = b
 		case "branch":
 			warnf("Key 'branch' in %s is no longer supported ('sbx run' dropped --branch). "+
 				"Rename it to 'clone: true|false'.", path)
 		default:
-			warnf("Unknown key '%s' in %s (expected: template, agent, clone, cache, build)", key, path)
+			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache)", key, path)
 		}
 	}
+
+	if build != nil {
+		// A config written before templates were always built locally. The block wins over a
+		// `template:` beside it, exactly as before: that value named the image tag, not the
+		// template, so it is not validated either.
+		warnf("'build:' in %s is deprecated. Write 'template: %s' and, to pin a release, "+
+			"'version: <release>' instead.", path, build.Name)
+		cfg.Template = build.Name
+		if build.Release != "" {
+			if cfg.Version != "" && cfg.Version != build.Release {
+				return nil, fmt.Errorf("%s sets both 'version: %s' and 'build.release: %s' — keep only 'version'",
+					path, cfg.Version, build.Release)
+			}
+			cfg.Version = build.Release
+		}
+		return cfg, nil
+	}
+	if template != "" {
+		if err := checkTemplateName(template, "'template' in "+path); err != nil {
+			return nil, err
+		}
+		cfg.Template = template
+	}
 	return cfg, nil
+}
+
+// checkTemplateName rejects an image reference where a template name belongs. Before templates
+// were always built locally, `template:` held a registry image; a config that still does would
+// otherwise fail later with "no template" and no hint that the meaning changed. The error names
+// the replacement.
+func checkTemplateName(value, where string) error {
+	if !strings.ContainsAny(value, "/:@") {
+		return nil
+	}
+	hint := ""
+	if name := suggestTemplateName(value); name != "" {
+		hint = fmt.Sprintf(" — e.g. 'template: %s'", name)
+	}
+	return fmt.Errorf("%s is %q, an image reference, but sbxup now builds templates locally and never pulls one. "+
+		"Name a template from the release instead%s ('sbxup --init' lists them)", where, value, hint)
+}
+
+// suggestTemplateName reduces an image reference to the bare name it would have been built
+// from: docker.io/pkudrel/sbx-claude-dotnet10:latest -> sbx-claude-dotnet10.
+func suggestTemplateName(ref string) string {
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	if i := strings.IndexAny(ref, ":@"); i >= 0 {
+		ref = ref[:i]
+	}
+	return ref
 }
 
 // parseBuild decodes the `build:` block. A bare string is accepted as shorthand for the
@@ -161,29 +228,28 @@ func isTruthy(v any) bool {
 	return false
 }
 
-// buildConfigBody renders a config wired to a locally built template.
+// buildConfigBody renders a config for a template chosen from a release.
 //
-// No version appears anywhere: `template` is the bare template name and `release` floats at
-// @latest. Writing a resolved pin here was the reason a user had to know a release tag before
-// they could edit their own config — pinning stays available, as a deliberate edit.
+// No pin is written: `template` is the bare name and the release floats at latest. Writing a
+// resolved pin here was the reason a user had to know a release tag before they could edit their
+// own config — pinning stays available, as a deliberate edit, and a commented example shows how.
+// A fork is the exception: without an explicit `version` the config would silently build the
+// canonical repository's template instead of the one that was picked.
 func buildConfigBody(t *TemplateEntry, ref releaseRef) string {
-	source := releaseRef{Owner: ref.Owner, Repo: ref.Repo} // no Tag => @latest
-	return fmt.Sprintf(`template: %s
-agent: claude
-clone: false
-build:
-  name: %s   # built locally from src/%s/Dockerfile in the release tarball
-  release: %s   # replace 'latest' with a version, e.g. @%s, to freeze the environment
-`, t.Name, t.Name, t.Name, source, versionOrLatest(t))
-}
-
-// versionOrLatest supplies the example pin in the generated comment: the version actually
-// resolved, so the user can see the shape of the value they would be typing.
-func versionOrLatest(t *TemplateEntry) string {
-	if t.Version == "" {
-		return "latest"
+	name := t.Short
+	if name == "" {
+		name = t.Name
 	}
-	return t.Version
+	var b strings.Builder
+	fmt.Fprintf(&b, "template: %s   # built locally from src/%s/Dockerfile in the release tarball\n", name, t.Name)
+	if !ref.isDefaultSource() {
+		fmt.Fprintf(&b, "version: %s   # this template comes from a fork\n",
+			releaseRef{Owner: ref.Owner, Repo: ref.Repo})
+	}
+	if pin := strings.TrimPrefix(ref.Tag, templatesTagPrefix); pin != "" {
+		fmt.Fprintf(&b, "# version: %s   # pin the release to freeze the environment; without it sbxup follows the latest\n", pin)
+	}
+	return b.String()
 }
 
 // initConfig writes the default starter config, refusing to clobber an existing one.

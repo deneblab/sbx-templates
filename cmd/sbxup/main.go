@@ -15,11 +15,11 @@ import (
 // version is stamped at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-const usage = `sbxup — launch and manage Claude Code sandboxes from sbxup.yaml
+const usage = `sbxup — launch and manage Claude Code sandboxes from .sbx/sbxup.config.yaml
 
 Usage:
   sbxup                    Run sandbox using config defaults
-  sbxup --init             Create sbxup.yaml — pick a template from the latest release
+  sbxup --init             Create the config — pick a template from the latest release
   sbxup --clone            Run on a private in-container git clone (overrides config)
   sbxup --no-clone         Disable clone mode (overrides config)
   sbxup --exec             Open a shell in the existing sandbox
@@ -30,26 +30,22 @@ Usage:
   sbxup --self-update      Update sbxup to the latest release
   sbxup --help             Show this help message
 
-Local templates (no Docker Hub):
-  sbxup --build            Build the configured template locally and run it
+Templates are always built locally from the templates-v* release, on first use:
   sbxup --rebuild          Rebuild even if the local image already exists
   sbxup --update-claude    Rebuild only the Claude Code layer of the local image
   sbxup --refresh          Re-check for a newer release and re-download its assets
 
 Parameters:
   --config <path>    Path to YAML config (default: .sbx/sbxup.config.yaml)
-  --template <img>   Docker image to use (overrides config); with --init or --build,
-                     a template name from the release, e.g. dotnet10
+  --template <name>  Template from the release, e.g. dotnet10 (overrides config)
   --agent <name>     Agent name, e.g. claude (overrides config)
 
 Config file — .sbx/sbxup.config.yaml, the only location read:
-  template: docker.io/pkudrel/sbx-claude-dotnet10:latest
-  agent: claude
-  clone: false        # optional: true => run on a private in-container git clone
-  cache: .sbx-cache   # optional: mount local cache dir into sandbox
-  build:              # optional: build the template locally instead of pulling it
-    name: dotnet10
-    release: deneblab/sbx-templates@latest   # or @0.1.4 to pin; a bare 0.1.4 works too
+  template: dotnet10   # a template from the release, built locally on first use
+  version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
+  agent: claude        # optional (default: claude)
+  clone: false         # optional: true => run on a private in-container git clone
+  cache: .sbx-cache    # optional: mount local cache dir into sandbox
 
 Extra arguments are passed through to 'sbx run'.
 `
@@ -64,7 +60,7 @@ type options struct {
 	status       bool
 	stop         bool
 	init         bool
-	build        bool
+	build        bool // accepted and ignored: a missing template is always built now
 	rebuild      bool
 	updateClaude bool
 	refresh      bool
@@ -199,13 +195,7 @@ func run(argv []string) error {
 		warnf("Found %s, which sbxup no longer reads. Rename it to %s.", legacy, defaultConfigPath)
 	}
 
-	template := firstNonEmpty(o.template, cfg.Template)
-	agent := firstNonEmpty(o.agent, cfg.Agent)
-
-	if agent == "" {
-		return fmt.Errorf("agent is required (set in %s or pass --agent). "+
-			"Run 'sbxup --init' to create a default config.", configHint(cfgPath))
-	}
+	agent := firstNonEmpty(o.agent, cfg.Agent, defaultAgent)
 
 	// --- Sandbox name ---------------------------------------------------------
 	// The candidate is what `sbx` most likely called the sandbox: agent + folder, verbatim.
@@ -227,19 +217,21 @@ func run(argv []string) error {
 		return execCmd(candidate, o.dryRun)
 	}
 
-	// Local-build path. The built tag replaces whatever `template` resolved to, so the rest of
-	// the run is identical to the registry flow — `sbx run --template <tag>` either way.
-	if cfg.Build != nil || o.build || o.rebuild || o.updateClaude {
-		tag, err := ensureLocalTemplate(cfg, o)
-		if err != nil {
+	// The template is a name from the release, built locally on first use. The built tag is
+	// what `sbx run --template` receives.
+	name := firstNonEmpty(o.template, cfg.Template)
+	if name == "" {
+		return fmt.Errorf("template is required (set 'template: <name>' in %s or pass --template <name>). "+
+			"Run 'sbxup --init' to create a config.", configHint(cfgPath))
+	}
+	if o.template != "" {
+		if err := checkTemplateName(o.template, "--template"); err != nil {
 			return err
 		}
-		template = tag
 	}
-
-	if template == "" {
-		return fmt.Errorf("template is required (set in %s or pass --template). "+
-			"Run 'sbxup --init' to create a default config.", configHint(cfgPath))
+	template, err := ensureLocalTemplate(name, cfg.Version, o)
+	if err != nil {
+		return err
 	}
 
 	// Precedence: --no-clone > --clone > config 'clone' key (default: off).
@@ -306,12 +298,12 @@ func initFlow(o *options) error {
 
 	ref, err := resolveTemplatesRelease(client, "", o.refresh)
 	if err != nil {
-		warnf("Cannot reach the template releases (%v) — writing the default registry config.", err)
+		warnf("Cannot reach the template releases (%v) — writing the default config.", err)
 		return writeOut(defaultConfigBody)
 	}
 	m, err := loadManifest(client, ref, o.refresh)
 	if err != nil {
-		warnf("Cannot read the template manifest (%v) — writing the default registry config.", err)
+		warnf("Cannot read the template manifest (%v) — writing the default config.", err)
 		return writeOut(defaultConfigBody)
 	}
 
@@ -328,29 +320,16 @@ func initFlow(o *options) error {
 			return err
 		}
 	default:
-		warnf("stdin is not a terminal and no --template was given — writing the default registry config.")
+		warnf("stdin is not a terminal and no --template was given — writing the default config.")
 		return writeOut(defaultConfigBody)
 	}
 
 	return writeOut(buildConfigBody(chosen, ref))
 }
 
-// ensureLocalTemplate resolves the configured template from the release, builds it if needed,
-// and returns the local image tag to run.
-func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
-	name, pin := "", ""
-	if cfg.Build != nil {
-		name, pin = cfg.Build.Name, cfg.Build.Release
-	}
-	// With an explicit build flag, --template names a template rather than an image reference.
-	if o.template != "" && (o.build || o.rebuild || o.updateClaude) {
-		name = o.template
-	}
-	if name == "" {
-		return "", fmt.Errorf("no template to build: add a 'build:' block to %s or pass --template <name>",
-			defaultConfigPath)
-	}
-
+// ensureLocalTemplate resolves the named template from the release (pin, or the newest when
+// empty), builds it if needed, and returns the local image tag to run.
+func ensureLocalTemplate(name, pin string, o *options) (string, error) {
 	client := &http.Client{Timeout: httpClient}
 	ref, err := resolveTemplatesRelease(client, pin, o.refresh)
 	if err != nil {
@@ -373,7 +352,6 @@ func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
 	// Already in the sandbox runtime's store: nothing to download and nothing to build, so
 	// neither the network nor Docker is touched on the common repeat run.
 	tag := entry.LocalTag(ref)
-	warnTemplateMismatch(cfg.Template, entry, tag)
 	if !o.rebuild && !o.updateClaude && !o.refresh && !o.dryRun && sbxTemplateListed(tag) {
 		fmt.Printf("Reusing template: %s\n", tag)
 		return tag, nil
@@ -384,25 +362,6 @@ func ensureLocalTemplate(cfg *Config, o *options) (string, error) {
 		return "", err
 	}
 	return buildTemplate(dockerfile, entry, ref, o.rebuild, o.updateClaude, o.dryRun)
-}
-
-// warnTemplateMismatch reports a `template:` key that disagrees with what the build produces.
-// The built tag always wins, so a stale value is otherwise invisible: a config still naming
-// :0.1.3 runs :0.2.6 without a word. A bare template name matches by identity and stays quiet.
-func warnTemplateMismatch(configured string, entry *TemplateEntry, tag string) {
-	if templateKeyAgrees(configured, entry, tag) {
-		return
-	}
-	warnf("'template: %s' does not match the image this build produces (%s) — the build wins. "+
-		"Update the 'template' key or remove it.", configured, tag)
-}
-
-func templateKeyAgrees(configured string, entry *TemplateEntry, tag string) bool {
-	switch configured {
-	case "", tag, entry.Name, entry.Short:
-		return true
-	}
-	return false
 }
 
 func firstNonEmpty(vals ...string) string {

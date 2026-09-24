@@ -89,15 +89,27 @@ This is the **only** location `sbxup` reads — there is no search order. A proj
 older `.agents/sbxup.yaml`, `.agents/sbx-runner.yaml` or root-level `sbxup.yaml` needs it renamed;
 `sbxup` names the stale file and tells you what to rename it to.
 
+The smallest useful config is one line:
+
 ```yaml
-template: docker.io/pkudrel/sbx-claude-dotnet10:latest
-agent: claude
-clone: false        # optional: true => run on a private in-container git clone
-cache: .sbx-cache   # optional: mount local cache dir into sandbox
-build:              # optional: build the template locally instead of pulling it
-  name: dotnet10
-  release: deneblab/sbx-templates@latest
+template: dotnet10
 ```
+
+With every key:
+
+```yaml
+template: dotnet10   # a template from the templates-v* release, built locally on first use
+version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
+agent: claude        # optional (default: claude)
+clone: false         # optional: true => run on a private in-container git clone
+cache: .sbx-cache    # optional: mount local cache dir into sandbox
+```
+
+`template` is a **name**, never an image reference: `sbxup` builds every template locally from the
+release and does not pull one of ours from a registry. A value like
+`docker.io/pkudrel/sbx-claude-dotnet10:latest` is an error that names the replacement
+(`template: sbx-claude-dotnet10`). Old configs that use a `build:` block still load, with a warning:
+`build.name` becomes `template` and `build.release` becomes `version`.
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
 
@@ -113,31 +125,33 @@ sbxup --init          # lists the templates in the latest release, you pick one
 sbxup                 # builds it locally the first time, then reuses the image
 ```
 
-`--init` writes a config with a `build:` block, which is what marks the template as locally built:
+`--init` writes just the template name, plus a commented example of a pin:
 
 ```yaml
-template: sbx-claude-dotnet10
-agent: claude
-clone: false
-build:
-  name: sbx-claude-dotnet10
-  release: deneblab/sbx-templates@latest
+template: dotnet10   # built locally from src/sbx-claude-dotnet10/Dockerfile in the release tarball
+# version: 0.2.8   # pin the release to freeze the environment; without it sbxup follows the latest
 ```
 
 **No version appears anywhere**, which is the point: you name a template, not a release tag.
 
 ### Choosing a release
 
-`release:` takes `<owner>/<repo>@<version|tag|latest>`, and the short forms mean the default
+`version:` takes `<owner>/<repo>@<version|tag|latest>`, and the short forms mean the default
 repository:
 
 ```yaml
-release: deneblab/sbx-templates@latest         # newest release, re-checked periodically
-release: deneblab/sbx-templates@0.1.4          # frozen
-release: 0.1.4                                 # same, default repository
-release: templates-v0.1.4                      # same, full tag
-release:                                       # omitted entirely = latest
+version: deneblab/sbx-templates@latest         # newest release, re-checked periodically
+version: deneblab/sbx-templates@0.1.4          # frozen
+version: 0.1.4                                 # same, default repository
+version: templates-v0.1.4                      # same, full tag
+version: latest                                # same as leaving the key out
 ```
+
+`version` pins the **release** (`templates-v…`), not the version of the image built from it. The two
+are independent counters — a release is cut on every change under `src/`, while each template's own
+version moves only when its directory changes — so `version: 0.2.8` can build an image `0.2.5`. The
+line printed at start-up shows both: `Template: dotnet10 0.2.5 (templates-v0.2.8)`. The same key
+selects a fork, and the deprecated `build.release` is still read as `version`.
 
 A value that is none of these is an error listing the accepted forms — a mistyped pin never
 silently degrades to "latest".
@@ -154,7 +168,7 @@ every run (`Template: dotnet10 0.2.6 (templates-v0.2.6)`).
 Useful flags:
 
 ```bash
-sbxup --build --template dotnet10   # build a template without editing the config first
+sbxup --template dotnet10           # use (and build, if missing) a template without editing the config
 sbxup --rebuild                     # rebuild even though the image exists
 sbxup --update-claude               # rebuild only the Claude Code layer
 sbxup --refresh                     # re-check for a newer release, re-download its assets
@@ -178,7 +192,7 @@ build, `--rebuild`, or `--update-claude`; if it is not, sbxup says so instead of
 builder.
 
 `--init` degrades rather than fails: with no network, no release, or a non-interactive stdin and no
-`--template`, it writes the standard registry config instead.
+`--template`, it writes `template: dotnet10`, which is valid without any network.
 
 **This is not an air-gapped build.** Nothing of *ours* is pulled from Docker Hub, but the base image
 `docker/sandbox-templates:claude-code`, apt, and the Claude Code install script are still fetched.
@@ -234,12 +248,12 @@ task update-claude:dotnet10-python-uv  # .NET 10 + Python/uv
 task update-claude                   # default image
 ```
 
-**Use the locally built image** — set `template` in `.sbx\sbxup.config.yaml` to the local tag:
+**Use the locally built image** — `sbxup` does not accept an image reference (`template` is a template
+name, and `sbxup` builds its own tag from the release), so run an image built by `task build:*` with
+`sbx` directly, as in [Option B](#option-b--direct-sbx-command):
 
-```yaml
-template: docker.io/pkudrel/sbx-claude-dotnet10:latest
-agent: claude
-clone: false
+```bash
+sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude
 ```
 
 The image is served from the local Docker daemon — no registry push needed.

@@ -100,14 +100,34 @@ project/
 ```
 
 ```yaml
-template: docker.io/pkudrel/sbx-claude-dotnet10:latest
-agent: claude
-clone: false        # optional: true => run on a private in-container git clone
-cache: .sbx-cache   # optional: mount local cache dir into sandbox
-build:              # optional: build the template locally instead of pulling it
-  name: dotnet10
-  release: deneblab/sbx-templates@latest
+template: dotnet10   # a template from the templates-v* release, built locally on first use
+version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
+agent: claude        # optional (default: claude)
+clone: false         # optional: true => run on a private in-container git clone
+cache: .sbx-cache    # optional: mount local cache dir into sandbox
 ```
+
+The minimal config is `template: dotnet10`. **There is no registry mode**: `template` is always a name
+from the release and is always built locally, so a value that looks like an image reference
+(`docker.io/...`, `name:tag`, `name@digest`) is a hard error from `checkTemplateName`, which names the
+replacement (`sbx-claude-dotnet10`). The same check covers `--template`. Consequences worth keeping in
+mind when touching this code:
+
+- **The same fact is stated once.** The old shape repeated the name and version in `template`,
+  `build.name` and `build.release`, and `warnTemplateMismatch` existed only to catch them drifting apart.
+  With one `template` and one `version` there is nothing to cross-check, so that function is gone.
+- **`build:` is deprecated, not removed.** `loadConfig` folds `build.name` into `Template` and
+  `build.release` into `Version` and warns. A `template:` beside `build:` is ignored and not validated
+  (it named the image tag, not the template); `version` and `build.release` must agree if both are set.
+- **Defaults are not written down.** `agent` falls back to `defaultAgent` (`claude`) in `run()`, `clone`
+  defaults off, and `--init` writes only `template:` plus a *commented* example pin. The example uses the
+  release version, not the image's: `version` pins the release (`templates-v...`), and the two counters
+  are independent, so `version: 0.2.8` can build an image `0.2.5` (the start-up line prints both).
+- **`--init` needs no network to be valid.** Its fallback body is `template: dotnet10`, because a template
+  is just a name resolved on first run.
+- **`--build` is still parsed** (and ignored) so an old script does not leak it through to `sbx run`.
+- **Older sbxup cannot read the new shape.** It would try to pull an image called `dotnet10`; mention it
+  in the release notes when this ships.
 
 `.sbx/sbxup.config.yaml` is the **only** path read — there is no search order, so there is never a question of which of several files won. `legacyConfigPaths` in `config.go` lists the previously supported names; they are probed only to turn "config not found" into a rename instruction, never loaded.
 
@@ -125,7 +145,7 @@ carrying two assets and a `.sha256` for each: a `manifest.json` catalogue built 
 ```bash
 sbxup --init                        # pick a template from the latest release
 sbxup                               # builds locally on first run, reuses the image after
-sbxup --build --template dotnet10   # build without editing the config
+sbxup --template dotnet10           # use (and build, if missing) a template without editing the config
 sbxup --rebuild                     # force a rebuild
 sbxup --update-claude               # rebuild only the claude stage
 sbxup --refresh                     # re-check for a newer release, re-download its assets
@@ -139,10 +159,10 @@ Assets are checksum-verified before use and cached at
 `buildTemplate` uses the same `VERSION` / `SHORT_SHA` / `BUILD_DATE` build-arg contract as
 `build-push.sh --no-push`, so a locally built image carries the same OCI labels as a published one.
 
-### `release:` names a source repository, not just a tag
+### `version:` names a source repository, not just a tag
 
-`parseReleaseRef` turns a `build.release` value into a `releaseRef{Owner, Repo, Tag}`:
-`deneblab/sbx-templates@0.1.4`, `@latest`, a bare `0.1.4` / `templates-v0.1.4` for the default
+`parseReleaseRef` turns a `version` value (formerly `build.release`) into a `releaseRef{Owner, Repo, Tag}`:
+`deneblab/sbx-templates@0.1.4`, `@latest`, `latest`, a bare `0.1.4` / `templates-v0.1.4` for the default
 repository, or empty for its newest release. **An unrecognised value is a hard error**, never a
 fallback to latest — the key exists to make a build reproducible, so a typo like `lastest` must fail
 rather than quietly float. `owner/repo` is validated before use because it becomes both a URL path
@@ -163,9 +183,6 @@ Consequences worth keeping in mind when touching this code:
   record → network → stale record with a warning. This is what lets a config carry no version at all
   and still start offline; without it, dropping the pin would trade a version number for a hard
   network dependency on every run.
-- **`template:` is cross-checked, not ignored.** With `build:` present the built tag wins, so
-  `warnTemplateMismatch` reports a `template:` key that disagrees rather than letting a stale value
-  sit unnoticed.
 
 ### The release tarball is what sbxup extracts
 
@@ -257,15 +274,14 @@ bash scripts/build/build-push.sh --image sbx-claude-dotnet10 --no-push --update-
 .\scripts\build\build-push.ps1 -ImageName sbx-claude-dotnet10 -NoPush -UpdateClaude
 ```
 
-### Step 3 — Point sbxup.yaml at the local image
+### Step 3 — Run the local image
 
-```yaml
-template: docker.io/pkudrel/sbx-claude-dotnet10:latest
-agent: claude
-clone: false
+`sbxup` does not take an image reference (`template` is a name; see "sbxup.config.yaml"), so an image
+built by `task build:*` is run with `sbx` directly:
+
+```bash
+sbx run --template docker.io/pkudrel/sbx-claude-dotnet10:latest claude
 ```
-
-The image tag is the same whether built locally or pushed — `sbxup` picks it up from the local daemon automatically.
 
 ## Versioning
 

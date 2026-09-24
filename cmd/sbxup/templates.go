@@ -96,7 +96,7 @@ var (
 const releaseFormsHint = "expected 'latest', a version like '0.1.4', a tag like 'templates-v0.1.4', " +
 	"or '<owner>/<repo>@<version|tag|latest>'"
 
-// parseReleaseRef turns a config `release:` value into a releaseRef.
+// parseReleaseRef turns a config `version:` value into a releaseRef.
 //
 // Accepted: "" and "latest" (newest release of the default repo), "0.1.4" / "v0.1.4" /
 // "templates-v0.1.4" (that release of the default repo), and any of those after
