@@ -146,6 +146,7 @@ carrying two assets and a `.sha256` for each: a `manifest.json` catalogue built 
 sbxup --init                        # pick a template from the latest release
 sbxup                               # builds locally on first run, reuses the image after
 sbxup --template dotnet10           # use (and build, if missing) a template without editing the config
+sbxup --update                      # check for a newer template version and build it, without asking
 sbxup --rebuild                     # force a rebuild
 sbxup --update-claude               # rebuild only the claude stage
 sbxup --refresh                     # re-check for a newer release, re-download its assets
@@ -183,6 +184,36 @@ Consequences worth keeping in mind when touching this code:
   record → network → stale record with a warning. This is what lets a config carry no version at all
   and still start offline; without it, dropping the pin would trade a version number for a hard
   network dependency on every run.
+
+### A new template version is offered, never built unasked
+
+`update.go`. When the release carries a template version that is not built, `ensureLocalTemplate` calls
+`offerUpdate` unless the release is pinned or the user consented (`--update`, `--rebuild`,
+`--update-claude`). Consequences worth keeping in mind:
+
+- **"Update" is told from "first start" by `sbx template ls`.** `sbxTemplateTags(repo)` lists the
+  built versions of `entry.LocalRepo(ref)`; no numeric version means a first start, which builds without
+  asking. It needs no Docker daemon, which is what lets an update be offered while Docker is closed.
+  Matching is on the canonical repository, so the frozen `docker.io/pkudrel/...` image is not mistaken
+  for a built version.
+- **Nothing is fetched before consent.** Detecting an update costs one `manifest.json`; the tarball and
+  the build wait for a "yes". Running the installed version needs only its registered tag.
+- **A release that is not ahead of what is installed** (another project already built a newer one) just
+  runs the newest installed version; there is no downgrade offer.
+- **The default answer is no, and the question has three refusals.** No terminal, Docker unreachable and
+  `--dry-run` all print the same "running X, `sbxup --update` builds Y" line without asking. Input that
+  ends before anything is typed (`< /dev/null`, which `interactive()` counts as a terminal) is *no
+  answer*, not a "no", so it is not remembered.
+- **A "no" lives in `latest.json`, in `latestRecord.Declined`.** It keeps the record's `ResolvedAt`, so
+  the usual 180 h check still happens, and that check writes a fresh record, which clears the list. So a
+  "no" means "ask again after the next check" with no state file of its own. `--refresh` and `--update`
+  both re-check the network.
+- **Everything here is global per user**: the cache, the built images and `latest.json` are not per
+  project. A "yes" in one project makes the new tag available to new sandboxes everywhere; a "no" silences
+  the question everywhere. A pin (`version:`) is the per-project control.
+- **A sandbox keeps the image it was created with**, and `run()` resumes it by name with no run args.
+  After a build, `ensureLocalTemplate` says so and names `sbx rm`; it never runs it, since that deletes
+  the sandbox's state.
 
 ### The release tarball is what sbxup extracts
 

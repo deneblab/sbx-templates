@@ -180,14 +180,19 @@ type TemplateEntry struct {
 // overwrite the canonical image, and neither build could tell that it had happened. The default
 // source keeps its bare name, so no existing tag changes.
 func (t TemplateEntry) LocalTag(ref releaseRef) string {
-	name := t.Name
-	if !ref.isDefaultSource() {
-		name = strings.ToLower(ref.Owner) + "-" + name
-	}
 	if t.Version == "" {
-		return name + ":local"
+		return t.LocalRepo(ref) + ":local"
 	}
-	return name + ":" + t.Version
+	return t.LocalRepo(ref) + ":" + t.Version
+}
+
+// LocalRepo is LocalTag without the version: the repository every built version of this
+// template shares in the image store. Finding the older versions of a template is a match on it.
+func (t TemplateEntry) LocalRepo(ref releaseRef) string {
+	if !ref.isDefaultSource() {
+		return strings.ToLower(ref.Owner) + "-" + t.Name
+	}
+	return t.Name
 }
 
 // Manifest is manifest.json from a templates-v* release.
@@ -326,6 +331,10 @@ func writeCache(path string, data []byte) error {
 type latestRecord struct {
 	Tag        string    `json:"tag"`
 	ResolvedAt time.Time `json:"resolvedAt"`
+	// Declined lists the local template tags the user answered "no" to since this record was
+	// resolved. Resolving again from the network writes a fresh record, which clears it — so a
+	// "no" lasts until the next release check, not for ever, and needs no state file of its own.
+	Declined []string `json:"declined,omitempty"`
 }
 
 func latestRecordPath(ref releaseRef) (string, error) {

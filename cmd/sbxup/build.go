@@ -108,6 +108,39 @@ func templateListedIn(out, tag string) bool {
 	return false
 }
 
+// templateTagsIn returns the tags `sbx template ls` lists for one repository, in listing order.
+// Repositories are compared in canonical form, so `docker.io/library/sbx-claude-dotnet10` matches
+// the bare name the local tag uses — while `docker.io/pkudrel/sbx-claude-dotnet10`, the frozen
+// Docker Hub image, correctly does not.
+func templateTagsIn(out, repo string) []string {
+	norm := func(r string) string { return strings.TrimSuffix(canonicalRef(r, "x"), ":x") }
+	want := norm(repo)
+	var tags []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] == "REPOSITORY" {
+			continue
+		}
+		if norm(fields[0]) == want && !seen[fields[1]] {
+			seen[fields[1]] = true
+			tags = append(tags, fields[1])
+		}
+	}
+	return tags
+}
+
+// sbxTemplateTags lists the versions of a template the sandbox runtime already has. Like
+// sbxTemplateListed it needs no Docker daemon, which is what lets an update be *offered* without
+// Docker running.
+var sbxTemplateTags = func(repo string) []string {
+	out, err := exec.Command("sbx", "template", "ls").CombinedOutput()
+	if err != nil && len(out) == 0 {
+		return nil
+	}
+	return templateTagsIn(string(out), repo)
+}
+
 // sbxTemplateListed reports whether `sbx` can already see the tag as a template.
 //
 // The sandbox runtime keeps its own image store, separate from the host Docker daemon: `sbx`

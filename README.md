@@ -169,11 +169,37 @@ Useful flags:
 
 ```bash
 sbxup --template dotnet10           # use (and build, if missing) a template without editing the config
+sbxup --update                      # check for a newer template version and build it, without asking
 sbxup --rebuild                     # rebuild even though the image exists
 sbxup --update-claude               # rebuild only the Claude Code layer
 sbxup --refresh                     # re-check for a newer release, re-download its assets
 sbxup --init --template dotnet10    # non-interactive; no prompt
 ```
+
+### When a newer version is published
+
+A new `templates-v…` release does not always mean a new image: each template's version moves only when
+its own directory changes. When it does — say `dotnet10` goes from `0.2.8` to `0.2.9` — `sbxup` **never
+builds it on its own**. With an older version already built, it keeps running that one and asks:
+
+```
+New version of template dotnet10 is available: 0.2.9 (using 0.2.8)
+  https://github.com/deneblab/sbx-templates/releases/tag/templates-v0.4.12
+Building takes a few minutes and needs Docker. Update? [y/N]
+```
+
+Only `y` builds it; a bare Enter declines. A "no" is remembered until the next release check (the
+180 hours above, or `--refresh`), so it does not nag on every start. `sbxup --update` re-checks and
+builds without asking. Without a terminal (a script, CI) it never asks and never builds — it runs the
+installed version and prints a line pointing at `--update`. It also does not ask when Docker is not
+running, since the answer could not be acted on. A first start, with nothing built yet, builds
+without asking, and so does a `version:` pin: that is the release you asked for.
+
+Built images and this decision are per user, not per project, so a "yes" in one project makes the new
+version available to every other project's *new* sandboxes. An existing sandbox keeps the image it was
+created with — `sbxup` resumes it by name — so to move it to the new version, remove it with
+`sbx rm <name>` (this deletes the sandbox's own state, not your project files) and run `sbxup` again.
+To keep a project on a version regardless, pin it with `version:`.
 
 `sbxup` downloads the manifest and the tarball, then extracts `src/` from it — one download makes
 every template in the release available, so switching templates later needs no network at all.

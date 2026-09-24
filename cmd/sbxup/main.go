@@ -31,6 +31,7 @@ Usage:
   sbxup --help             Show this help message
 
 Templates are always built locally from the templates-v* release, on first use:
+  sbxup --update           Check for a newer template version and build it, without asking
   sbxup --rebuild          Rebuild even if the local image already exists
   sbxup --update-claude    Rebuild only the Claude Code layer of the local image
   sbxup --refresh          Re-check for a newer release and re-download its assets
@@ -46,6 +47,9 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   agent: claude        # optional (default: claude)
   clone: false         # optional: true => run on a private in-container git clone
   cache: .sbx-cache    # optional: mount local cache dir into sandbox
+
+When a newer version of a template is available, sbxup keeps running the one you have and asks
+before building the new one. Without a terminal it does not ask; --update builds it.
 
 Extra arguments are passed through to 'sbx run'.
 `
@@ -63,6 +67,7 @@ type options struct {
 	build        bool // accepted and ignored: a missing template is always built now
 	rebuild      bool
 	updateClaude bool
+	update       bool
 	refresh      bool
 	dryRun       bool
 	version      bool
@@ -98,6 +103,8 @@ func parseArgs(argv []string) (*options, error) {
 			o.rebuild = true
 		case "--update-claude":
 			o.updateClaude = true
+		case "--update":
+			o.update = true
 		case "--refresh":
 			o.refresh = true
 		case "--clone":
@@ -229,7 +236,10 @@ func run(argv []string) error {
 			return err
 		}
 	}
-	template, err := ensureLocalTemplate(name, cfg.Version, o)
+	// Looked up before the template so an update offer can say the sandbox will keep its image;
+	// the same answer decides below whether to resume it.
+	existing := resolveSandboxName(candidate)
+	template, err := ensureLocalTemplate(name, cfg.Version, existing, o)
 	if err != nil {
 		return err
 	}
@@ -268,7 +278,7 @@ func run(argv []string) error {
 	}
 
 	// Resume an existing sandbox rather than failing on "already exists".
-	if existing := resolveSandboxName(candidate); existing != "" {
+	if existing != "" {
 		fmt.Printf("Resuming existing sandbox: %s\n", existing)
 		return runSbx("run", "--name", existing)
 	}
@@ -329,9 +339,14 @@ func initFlow(o *options) error {
 
 // ensureLocalTemplate resolves the named template from the release (pin, or the newest when
 // empty), builds it if needed, and returns the local image tag to run.
-func ensureLocalTemplate(name, pin string, o *options) (string, error) {
+//
+// A template that is not built yet is built without asking only when there is no older version
+// of it to run instead (a first start), when the release is pinned, or when the user asked
+// (--update, --rebuild, --update-claude). Otherwise offerUpdate keeps the installed version and
+// asks first. sandbox is the existing sandbox for this project, or "".
+func ensureLocalTemplate(name, pin, sandbox string, o *options) (string, error) {
 	client := &http.Client{Timeout: httpClient}
-	ref, err := resolveTemplatesRelease(client, pin, o.refresh)
+	ref, err := resolveTemplatesRelease(client, pin, o.refresh || o.update)
 	if err != nil {
 		return "", err
 	}
@@ -357,11 +372,28 @@ func ensureLocalTemplate(name, pin string, o *options) (string, error) {
 		return tag, nil
 	}
 
+	consent := o.rebuild || o.updateClaude || o.update
+	if pin == "" && !consent {
+		if use, done := offerUpdate(entry, ref, sandbox, o); done {
+			return use, nil
+		}
+	}
+
 	dockerfile, err := fetchDockerfile(client, ref, m, entry, o.refresh)
 	if err != nil {
 		return "", err
 	}
-	return buildTemplate(dockerfile, entry, ref, o.rebuild, o.updateClaude, o.dryRun)
+	built, err := buildTemplate(dockerfile, entry, ref, o.rebuild, o.updateClaude, o.dryRun)
+	if err != nil {
+		return "", err
+	}
+	if sandbox != "" && !o.dryRun {
+		// sbx keeps a sandbox on the image it was created from, and sbxup resumes it by name.
+		fmt.Printf("Sandbox %s keeps the image it was created with. To use %s, remove it with "+
+			"'sbx rm %s' (this deletes the sandbox's state, not your project files) and run sbxup again.\n",
+			sandbox, built, sandbox)
+	}
+	return built, nil
 }
 
 func firstNonEmpty(vals ...string) string {
