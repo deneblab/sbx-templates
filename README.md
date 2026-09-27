@@ -105,6 +105,8 @@ mounts:              # optional: extra host directories; ':ro' for read-only (se
   - ~/shared-libs:ro
 ```
 
+Not a config key: `sbxup` also imports your skills into sbx's store (see "Skills" below); `--no-skills` skips it.
+
 `template` is a **name**, never an image reference: `sbxup` builds every template locally from the
 release and does not pull one of ours from a registry. A value like
 `docker.io/pkudrel/sbx-claude-dotnet10:latest` is an error that names the replacement
@@ -244,6 +246,26 @@ mounts:
   project files). sbxup prints a note about it, and asks nothing, when it resumes.
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
+
+### Skills
+
+sbx mounts one shared `agent-skills` store, read-only, into every sandbox, and fills it only on request.
+`sbxup` requests it with `sbx skills import --force`, which copies the skills installed for the coding
+agents on this machine (`~/.agents`, `~/.claude`, `~/.config/opencode`, `~/.copilot`, `~/.cursor` and
+`~/.factory`, each under `skills/`) into that store. There is no config key.
+
+- **A new sandbox imports without asking.**
+- **A resumed sandbox asks, and only when your skills changed** since the last import. sbxup keeps a
+  checksum of those directories (files inside each skill folder, by path and content) in your user cache:
+  `sbxup/skills-import.json` under `%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `~/.cache`
+  (or `$XDG_CACHE_HOME`) on Linux. A "no" is remembered for that state, so you are asked again only after
+  the next change. No terminal or no answer skips the import and remembers nothing.
+- **The store is shared and live.** An import changes the skills of every sandbox, running ones included.
+  `--no-skills` skips the import and the question for one start.
+- **It replaces.** A skill of the same name is replaced completely, including one added with
+  `sbx skills add`. A skill you deleted on the host is not documented to be removed from the store.
+- **It never stops a start.** `sbx skills import` is marked experimental; a failure is a warning that shows
+  sbx's output. `--dry-run` shows the command and runs nothing.
 
 ## Run without Docker Hub
 

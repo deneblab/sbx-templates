@@ -22,6 +22,7 @@ Usage:
   sbxup --init             Create the config — pick a template from the latest release
   sbxup --clone            Run on a private in-container git clone (overrides config)
   sbxup --no-clone         Disable clone mode (overrides config)
+  sbxup --no-skills        Skip the skills import and its question this time
   sbxup --exec             Open a shell in the existing sandbox
   sbxup --status           List sandboxes for the current project
   sbxup --stop             Stop the sandbox for the current project
@@ -54,6 +55,9 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
 When a newer version of a template is available, sbxup keeps running the one you have and asks
 before building the new one. Without a terminal it does not ask; --update builds it.
 
+Skills: a new sandbox gets 'sbx skills import --force' (your agents' skills, into the store shared by all
+sandboxes). On a resume sbxup asks, and only when the skills on the host changed since the last import.
+
 Mounts are checked before anything is built: the home directory and credential directories
 (~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
 
@@ -66,6 +70,7 @@ type options struct {
 	agent        string
 	clone        bool
 	noClone      bool
+	noSkills     bool
 	exec         bool
 	status       bool
 	stop         bool
@@ -117,6 +122,8 @@ func parseArgs(argv []string) (*options, error) {
 			o.clone = true
 		case "--no-clone":
 			o.noClone = true
+		case "--no-skills":
+			o.noSkills = true
 		case "--exec":
 			o.exec = true
 		case "--status":
@@ -254,6 +261,8 @@ func run(argv []string) error {
 	if err != nil {
 		return err
 	}
+	// Before a template is built, like the mounts, so a question does not wait behind minutes of build.
+	importSkills(existing != "", o.noSkills, o.dryRun)
 	template, err := ensureLocalTemplate(name, cfg.Version, existing, o)
 	if err != nil {
 		return err

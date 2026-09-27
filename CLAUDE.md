@@ -164,6 +164,30 @@ empty (otherwise the first extra directory becomes the primary workspace). Thing
   docs only say "append `:ro` to make it read-only"; this has not been verified on a real sbx.
 - **The mounted path is the symlink-resolved one**, so what is checked is what is mounted.
 
+### Skills come from `sbx skills import` (`skills.go`)
+
+sbx mounts a shared `agent-skills` store (read-only, live) into every sandbox and fills it only when asked.
+`importSkills` runs `sbx skills import --force` before the template is ensured. It is not a config key, on
+purpose: a repository config must not decide what is copied from the user's home. Things worth keeping in mind:
+
+- **New sandbox: import, no question. Resume: ask, only if the sources changed.** "Changed" is
+  `skillsChecksum` against `sbxup/skills-import.json` in the user cache (one record per user, since the
+  store is global). The record holds the checksum of the last import *or* the last "no", so a declined state
+  is not asked about twice. No terminal, no answer or a failed import records nothing; a missing record on
+  resume counts as changed.
+- **The checksum follows the importer's rules** over the same six `skillSources`: files inside each
+  top-level skill folder (a top-level symlink to a directory counts), not loose top-level files. Keep
+  `skillSources` in step with `sbx skills import --help`.
+- **The checksum is not stored in `~/.claude/skills`**: it covers six directories, a file there would
+  change what it hashes, and Claude Code on the host would see it.
+- **`--force` is required**, not a convenience: without it sbx prompts before replacing each installed
+  skill. A re-import replaces a skill completely, including a same-named one from `sbx skills add`.
+- **A failure is a warning.** The command is `EXPERIMENTAL` in sbx. Its output is shown only on failure.
+- **The seam is `sbxSkillsImport`**, a variable like `sbxList`, so tests never run `sbx`.
+- **Deliberately not done:** copying files into `agent-skills` ourselves. Only its Windows path is confirmed,
+  sbx may keep a registry that a manual copy bypasses, and sbxup would need a manifest to avoid deleting what
+  sbx put there. SBXT-001's per-project `skills:` key (`--skills=off|readonly`) was superseded by this.
+
 ## Local Templates Without Docker Hub
 
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)
