@@ -103,6 +103,8 @@ clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
 mounts:              # optional: extra host directories; ':ro' for read-only (see below)
   - ~/shared-libs:ro
+github:              # optional: a short-lived GitHub App token for the sandbox (see below)
+  bitwarden-item: github-deneblab-agent
 ```
 
 Not a config key: `sbxup` also imports your skills into sbx's store (see "Skills" below); `--no-skills` skips it.
@@ -266,6 +268,53 @@ agents on this machine (`~/.agents`, `~/.claude`, `~/.config/opencode`, `~/.copi
   `sbx skills add`. A skill you deleted on the host is not documented to be removed from the store.
 - **It never stops a start.** `sbx skills import` is marked experimental; a failure is a warning that shows
   sbx's output. `--dry-run` shows the command and runs nothing.
+
+### GitHub App tokens
+
+With a `github:` block, `sbxup` gives the sandbox a GitHub token that lasts an hour instead of a
+personal token you set by hand. The token belongs to a GitHub App, whose private key is kept in
+Bitwarden and never enters the sandbox.
+
+```yaml
+github:
+  bitwarden-item: github-deneblab-agent   # the Bitwarden item holding the app
+  # optional, with their defaults:
+  # key-attachment: <the item's only .pem attachment>
+  # client-id-field: client-id            # JWT issuer; falls back to the 'app-id' field
+  # repositories: [docs, deneblab/abcversion]   # added to the repo in 'origin'; same owner only
+  # permissions: {contents: write, pull_requests: write, issues: write}
+```
+
+The Bitwarden item has a `client-id` (or `app-id`) field and the app's private key as a `.pem`
+attachment. You need the Bitwarden CLI, `bw`, logged in once (`bw login`).
+
+What a start looks like:
+
+```
+> sbxup
+GitHub token: deneblab/sbx-templates from Bitwarden "github-deneblab-agent"
+  permissions: contents:write, issues:write, pull_requests:write
+  Allow this project to use it? [y/N] y                          # first time only
+Bitwarden is locked. Master password (Enter = no GitHub token this time):
+GitHub token: ready (expires 14:32)
+...
+GitHub token: revoked                                            # after you leave Claude
+```
+
+- **The password is asked at every start**, unless `BW_SESSION` is set in the terminal
+  (`$env:BW_SESSION = bw unlock --raw` in PowerShell, `export BW_SESSION=$(bw unlock --raw)` in bash).
+  **Enter on an empty password starts without a token.** When sbxup unlocks the vault, it locks it again
+  once the key is read.
+- **The token covers the repository in `origin`** plus `repositories`, all of the same owner, with
+  `permissions`. The first use of each combination asks for your approval; it is remembered in your user
+  cache (`sbxup/github/`), never in the repository, and a change asks again. "No" is not remembered.
+- **It is renewed while `sbx run` lasts** (about every 45 minutes) with `sbx secret set github`, and
+  **revoked when the session ends**, so a sandbox left running keeps no valid token.
+- **It never stops a start.** A missing `bw`, a wrong password, an app not installed on the repository or a
+  refused permission is a warning, and the sandbox starts without a token. `--dry-run` shows what would be
+  asked for and calls neither Bitwarden nor GitHub.
+- `--no-gh-token` starts without a token. `sbxup --gh-token` mints one and sets it in the sandbox that is
+  already running, e.g. from a second terminal; that token is not renewed and simply expires.
 
 ## Run without Docker Hub
 

@@ -188,6 +188,42 @@ purpose: a repository config must not decide what is copied from the user's home
   sbx may keep a registry that a manual copy bypasses, and sbxup would need a manifest to avoid deleting what
   sbx put there. SBXT-001's per-project `skills:` key (`--skills=off|readonly`) was superseded by this.
 
+### GitHub App tokens (`ghtoken.go`, `githubapp.go`, `bitwarden.go`)
+
+A `github:` block makes sbxup mint a one-hour GitHub App installation token and hand it to the sandbox
+with `sbx secret set github --sandbox <name>`, which takes effect in a running sandbox. Things worth
+keeping in mind:
+
+- **The key never enters the sandbox.** `bw` reads the item's `client-id` field and `.pem` attachment on
+  the host, the key stays in sbxup's memory for the session, and only the token is set. There is no key or
+  token cache on purpose: a cached key would be a second copy of the secret outside Bitwarden.
+- **The password reaches `bw` only through a child's environment** (`bw unlock --passwordenv`), never as an
+  argument, and is read with echo off (`golang.org/x/term`, the only dependency besides `yaml.v3`). An empty
+  password is a deliberate skip (`errNoToken`), not a failure. With `BW_SESSION` set nothing is asked.
+  When sbxup unlocked the vault it runs `bw lock` after reading. Every `bw` call gets `--nointeraction`.
+- **The config comes from the repository, so the request is approved once**, as with `mounts:`. The key in
+  `sbxup/github/<key>.json` covers project, item, owner, repositories and permissions, so naming another
+  item or widening anything asks again. "No" and no terminal skip, and nothing is remembered.
+- **One owner.** One installation mints one token and the sandbox holds one `github` secret, so
+  `repositories` must share the owner of `origin`; another owner is an error naming the entry.
+- **Unknown keys under `github:` are errors**, unlike top-level keys: a misspelt `permisions` would
+  otherwise mint a token with the defaults.
+- **The session outlives `sbx run`.** `run()` starts `keepFresh` beside `runSbx` and, after it returns,
+  cancels it, waits for it and revokes the last token. A refresh mints 15 minutes before expiry, sets the
+  new token and revokes the old one. A new sandbox is named by sbx only after `sbx run` starts, so
+  `keepFresh` first polls `sbx list` (up to 2 minutes) before setting the token.
+- **Ctrl+C.** `runSbx` catches `os.Interrupt` with `signal.Notify` while the child runs, so sbxup lives to
+  revoke the token. Not `signal.Ignore`: an ignored signal is inherited by the child.
+- **Every failure is a warning**, and the sandbox starts without a token. `--dry-run` calls neither `bw`
+  nor GitHub. `--gh-token` is a standalone command for a running sandbox; its token is not renewed.
+- **Seams:** `bwRun`, `readPassword`, `gitOriginURL`, `sbxSecretSet`, `askGitHub`, `sleepCtx`,
+  `githubAPIBase` and `runSbx` are variables, so tests never run `bw`, `git`, `sbx` or reach GitHub.
+- **Not verified on a real host yet** (`.agents/host-checklist.md`, SBXT-007):
+  - whether `sbx secret set` works before the sandbox exists, which would make the poll unnecessary;
+  - whether `bw get attachment … --raw` prints the attachment to stdout;
+  - whether an installation token works for `git push` and `gh` through the proxy;
+  - Ctrl+C on Windows.
+
 ## Local Templates Without Docker Hub
 
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)

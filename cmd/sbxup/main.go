@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -23,6 +24,8 @@ Usage:
   sbxup --clone            Run on a private in-container git clone (overrides config)
   sbxup --no-clone         Disable clone mode (overrides config)
   sbxup --no-skills        Skip the skills import and its question this time
+  sbxup --no-gh-token      Start without a GitHub token this time (config 'github:')
+  sbxup --gh-token         Mint a GitHub token and set it in the running sandbox
   sbxup --exec             Open a shell in the existing sandbox
   sbxup --status           List sandboxes for the current project
   sbxup --stop             Stop the sandbox for the current project
@@ -51,12 +54,20 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   mounts:              # optional: extra host directories; ':ro' for read-only
     - ~/shared-libs:ro
     - ../docs
+  github:              # optional: short-lived GitHub App token for the repo in 'origin'
+    bitwarden-item: github-deneblab-agent   # holds the app's client-id field and .pem key
+    repositories: [docs]                    # optional: more repos of the same owner
+    permissions: {contents: write}          # optional (default: contents, pull_requests, issues: write)
 
 When a newer version of a template is available, sbxup keeps running the one you have and asks
 before building the new one. Without a terminal it does not ask; --update builds it.
 
 Skills: a new sandbox gets 'sbx skills import --force' (your agents' skills, into the store shared by all
 sandboxes). On a resume sbxup asks, and only when the skills on the host changed since the last import.
+
+GitHub token: with 'github:' set, sbxup reads the app's key from Bitwarden ('bw'; asks for the master
+password unless BW_SESSION is set, Enter skips), sets a one-hour token with 'sbx secret set github',
+renews it while 'sbx run' lasts and revokes it on exit. The first use per project is approved once.
 
 Mounts are checked before anything is built: the home directory and credential directories
 (~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
@@ -71,6 +82,8 @@ type options struct {
 	clone        bool
 	noClone      bool
 	noSkills     bool
+	ghToken      bool
+	noGHToken    bool
 	exec         bool
 	status       bool
 	stop         bool
@@ -124,6 +137,10 @@ func parseArgs(argv []string) (*options, error) {
 			o.noClone = true
 		case "--no-skills":
 			o.noSkills = true
+		case "--gh-token":
+			o.ghToken = true
+		case "--no-gh-token":
+			o.noGHToken = true
 		case "--exec":
 			o.exec = true
 		case "--status":
@@ -235,6 +252,8 @@ func run(argv []string) error {
 		return stopCmd(candidate, o.dryRun)
 	case o.exec:
 		return execCmd(candidate, o.dryRun)
+	case o.ghToken:
+		return ghTokenCmd(cfg.GitHub, cwd, candidate, o.dryRun)
 	}
 
 	// The template is a name from the release, built locally on first use. The built tag is
@@ -263,6 +282,8 @@ func run(argv []string) error {
 	}
 	// Before a template is built, like the mounts, so a question does not wait behind minutes of build.
 	importSkills(existing != "", o.noSkills, o.dryRun)
+	// The token too: a password prompt must not wait behind a build.
+	gh := prepareGitHubToken(cfg.GitHub, cwd, o.noGHToken, o.dryRun)
 	template, err := ensureLocalTemplate(name, cfg.Version, existing, o)
 	if err != nil {
 		return err
@@ -304,6 +325,20 @@ func run(argv []string) error {
 	if o.dryRun {
 		fmt.Printf("[dry-run] sbx %s\n", strings.Join(args, " "))
 		return nil
+	}
+
+	if gh != nil {
+		// Resumed: the token is in place before the session starts. New: keepFresh sets it as
+		// soon as sbx lists the sandbox.
+		if existing != "" {
+			if err := sbxSecretSet(existing, gh.token); err != nil {
+				warnf("GitHub token: %v", err)
+			}
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { defer close(done); gh.keepFresh(ctx, existing, candidate) }()
+		defer func() { cancel(); <-done; gh.revoke() }()
 	}
 
 	// Resume an existing sandbox rather than failing on "already exists".

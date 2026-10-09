@@ -61,6 +61,28 @@ type Config struct {
 	// Mounts are extra host directories, each `path` or `path:ro`. Kept raw: they are resolved and
 	// checked at run time, when the project directory and the home directory are known.
 	Mounts []string
+	// GitHub asks for a short-lived GitHub App token for the repository in `origin`; nil means off.
+	GitHub *GitHubConfig
+}
+
+// GitHubConfig is the `github:` block. It names where the app's private key is kept, never the key
+// itself; the token is minted on the host and only the token reaches the sandbox.
+type GitHubConfig struct {
+	BitwardenItem string // name or id of the Bitwarden item holding the app
+	KeyAttachment string // the item's private-key attachment; empty takes its only *.pem
+	ClientIDField string // the item's field with the client ID, the JWT issuer
+	AppIDField    string // fallback issuer when the client ID field is missing
+	// Repositories are added to the one in `origin`: a bare name, or owner/name of the same owner.
+	Repositories []string
+	Permissions  map[string]string // permission -> read|write
+}
+
+// defaultGitHubPermissions apply when the block names none: enough to push a branch and open a
+// pull request, and to work with issues. GitHub always adds metadata:read.
+var defaultGitHubPermissions = map[string]string{
+	"contents":      "write",
+	"pull_requests": "write",
+	"issues":        "write",
 }
 
 // findConfig returns the config path if it exists, or "" when it does not.
@@ -118,6 +140,12 @@ func loadConfig(path string) (*Config, error) {
 				return nil, err
 			}
 			cfg.Mounts = m
+		case "github":
+			g, err := parseGitHub(val, path)
+			if err != nil {
+				return nil, err
+			}
+			cfg.GitHub = g
 		case "build":
 			b, err := parseBuild(val, path)
 			if err != nil {
@@ -128,7 +156,7 @@ func loadConfig(path string) (*Config, error) {
 			warnf("Key 'branch' in %s is no longer supported ('sbx run' dropped --branch). "+
 				"Rename it to 'clone: true|false'.", path)
 		default:
-			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache, mounts)", key, path)
+			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache, mounts, github)", key, path)
 		}
 	}
 
@@ -180,6 +208,66 @@ func parseMounts(val any, path string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("'mounts' in %s must be a list of paths", path)
 	}
+}
+
+// parseGitHub reads the `github:` block. Unlike the top-level keys an unknown key here is an error,
+// not a warning: a misspelt `permisions` would otherwise quietly mint a token with the defaults.
+func parseGitHub(val any, path string) (*GitHubConfig, error) {
+	if val == nil {
+		return nil, nil
+	}
+	m, ok := val.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("'github' in %s must be a block with at least 'bitwarden-item'", path)
+	}
+	g := &GitHubConfig{ClientIDField: "client-id", AppIDField: "app-id"}
+	for key, v := range m {
+		switch strings.ToLower(key) {
+		case "bitwarden-item":
+			g.BitwardenItem = scalarString(v)
+		case "key-attachment":
+			g.KeyAttachment = scalarString(v)
+		case "client-id-field":
+			g.ClientIDField = scalarString(v)
+		case "app-id-field":
+			g.AppIDField = scalarString(v)
+		case "repositories":
+			list, ok := v.([]any)
+			if !ok && v != nil {
+				return nil, fmt.Errorf("'github.repositories' in %s must be a list of repository names", path)
+			}
+			for _, item := range list {
+				s, ok := item.(string)
+				if !ok || strings.TrimSpace(s) == "" {
+					return nil, fmt.Errorf("each entry of 'github.repositories' in %s must be a name such as 'docs' or 'owner/docs', got %v", path, item)
+				}
+				g.Repositories = append(g.Repositories, strings.TrimSpace(s))
+			}
+		case "permissions":
+			pm, ok := v.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("'github.permissions' in %s must map a permission to read or write, e.g. 'contents: write'", path)
+			}
+			g.Permissions = map[string]string{}
+			for name, level := range pm {
+				l := strings.ToLower(scalarString(level))
+				if l != "read" && l != "write" {
+					return nil, fmt.Errorf("'github.permissions.%s' in %s is %q; use read or write", name, path, scalarString(level))
+				}
+				g.Permissions[name] = l
+			}
+		default:
+			return nil, fmt.Errorf("unknown key 'github.%s' in %s (expected: bitwarden-item, key-attachment, "+
+				"client-id-field, app-id-field, repositories, permissions)", key, path)
+		}
+	}
+	if g.BitwardenItem == "" {
+		return nil, fmt.Errorf("'github' in %s needs 'bitwarden-item': the Bitwarden item holding the GitHub App's key", path)
+	}
+	if len(g.Permissions) == 0 {
+		g.Permissions = defaultGitHubPermissions
+	}
+	return g, nil
 }
 
 // checkTemplateName rejects an image reference where a template name belongs. Before templates

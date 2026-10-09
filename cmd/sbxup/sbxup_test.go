@@ -72,6 +72,16 @@ func TestParseArgs(t *testing.T) {
 		}
 	})
 
+	t.Run("github token flags", func(t *testing.T) {
+		o, err := parseArgs([]string{"--GH-TOKEN", "--no-gh-token"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !o.ghToken || !o.noGHToken || len(o.extra) != 0 {
+			t.Fatalf("unexpected options: %+v", o)
+		}
+	})
+
 	t.Run("missing value is an error", func(t *testing.T) {
 		if _, err := parseArgs([]string{"--template"}); err == nil {
 			t.Fatal("expected an error for --template without a value")

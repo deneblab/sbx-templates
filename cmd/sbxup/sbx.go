@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 )
 
@@ -69,11 +70,18 @@ func buildRunArgs(template, agent string, clone bool, workspaces []string, extra
 }
 
 // runSbx executes `sbx` with the current stdio attached, so interactive sessions work.
-func runSbx(args ...string) error {
+//
+// While it runs, sbxup catches Ctrl+C instead of dying: the child gets the interrupt from the
+// terminal itself and decides, and sbxup must outlive it to stop the token refresh and revoke the
+// token. Notify rather than Ignore, because an ignored signal would be inherited by the child.
+var runSbx = func(args ...string) error {
 	cmd := exec.Command("sbx", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	defer signal.Stop(sig)
 	return cmd.Run()
 }
 
