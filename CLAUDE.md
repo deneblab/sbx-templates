@@ -222,11 +222,15 @@ keeping in mind:
   nor GitHub. `--gh-token` is a standalone command for a running sandbox; its token is not renewed.
 - **Seams:** `bwRun`, `readPassword`, `gitOriginURL`, `sbxSecretSet`, `askGitHub`, `sleepCtx`,
   `githubAPIBase` and `runSbx` are variables, so tests never run `bw`, `git`, `sbx` or reach GitHub.
-- **Not verified on a real host yet** (`.agents/host-checklist.md`, SBXT-007):
-  - whether `sbx secret set` works before the sandbox exists, which would make the poll unnecessary;
-  - whether `bw get attachment … --raw` prints the attachment to stdout;
-  - whether an installation token works for `git push` and `gh` through the proxy;
-  - Ctrl+C on Windows.
+- **Verified on Windows** (2026-10-09, `bw` 2026.9.0):
+  - `bw get attachment … --raw` prints the key to stdout;
+  - the installation token works through the proxy for `gh api` and `git push`;
+  - Ctrl+C exits Claude normally and sbxup then revokes the token;
+  - a resumed sandbox gets the new token without warnings (`-f`).
+
+  `bw` sees fields added in the app only after `bw sync`. `sbx secret set` also works for a sandbox that
+  does not exist yet; the poll in `keepFresh` was kept anyway (a deliberate choice: the token arrives
+  within seconds, and the poll does not depend on guessing the name sbx will pick).
 
 ## Local Templates Without Docker Hub
 
