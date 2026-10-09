@@ -214,6 +214,10 @@ keeping in mind:
   `keepFresh` first polls `sbx list` (up to 2 minutes) before setting the token.
 - **Ctrl+C.** `runSbx` catches `os.Interrupt` with `signal.Notify` while the child runs, so sbxup lives to
   revoke the token. Not `signal.Ignore`: an ignored signal is inherited by the child.
+- **`sbx secret set` needs `-f`** (`sbxSecretSetArgs`): without it sbx refuses to replace an existing
+  secret, so every refresh, every resumed sandbox and `--gh-token` would fail. Found on the host; a new
+  sandbox has no secret yet, which is why the first test passed without it. `--gh-token` revokes the token
+  it minted when the set fails.
 - **Every failure is a warning**, and the sandbox starts without a token. `--dry-run` calls neither `bw`
   nor GitHub. `--gh-token` is a standalone command for a running sandbox; its token is not renewed.
 - **Seams:** `bwRun`, `readPassword`, `gitOriginURL`, `sbxSecretSet`, `askGitHub`, `sleepCtx`,

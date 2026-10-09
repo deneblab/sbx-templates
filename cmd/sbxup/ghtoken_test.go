@@ -301,3 +301,25 @@ func TestGHTokenCmdRefusals(t *testing.T) {
 		t.Fatalf("no sandbox: %v", err)
 	}
 }
+
+func TestSbxSecretSetOverwrites(t *testing.T) {
+	// Without -f sbx refuses to replace the secret, so every refresh and every resume would fail.
+	got := strings.Join(sbxSecretSetArgs("claude-x", "ghs_1"), " ")
+	if got != "sbx secret set github --sandbox claude-x -f -t ghs_1" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestGHTokenCmdRevokesWhenTheSecretIsNotSet(t *testing.T) {
+	f, _, _ := stubGitHubFlow(t, true)
+	origList, origSet := sbxList, sbxSecretSet
+	t.Cleanup(func() { sbxList, sbxSecretSet = origList, origSet })
+	sbxList = func() []string { return []string{"claude-ghtest running"} }
+	sbxSecretSet = func(string, string) error { return errors.New("secret already exists") }
+
+	var err error
+	capture(t, func() { err = ghTokenCmd(agentConfig(), t.TempDir(), "claude-ghtest", false) })
+	if err == nil || f.minted != 1 || strings.Join(f.revoked, " ") != "ghs_1" {
+		t.Fatalf("err=%v minted=%d revoked=%v", err, f.minted, f.revoked)
+	}
+}

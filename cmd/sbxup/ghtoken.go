@@ -46,8 +46,11 @@ var (
 		return strings.TrimSpace(string(out)), nil
 	}
 	// sbxSecretSet stores the token as the sandbox's GitHub secret; the proxy injects it from there.
+	// -f is required: without it sbx refuses to replace an existing secret, which every refresh and
+	// every resumed sandbox has.
 	sbxSecretSet = func(sandbox, token string) error {
-		out, err := exec.Command("sbx", "secret", "set", "github", "--sandbox", sandbox, "-t", token).CombinedOutput()
+		args := sbxSecretSetArgs(sandbox, token)
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("sbx secret set github --sandbox %s: %v %s", sandbox, err, strings.TrimSpace(string(out)))
 		}
@@ -66,6 +69,11 @@ var (
 		}
 	}
 )
+
+// sbxSecretSetArgs is the whole command, kept apart so a test can pin the -f.
+func sbxSecretSetArgs(sandbox, token string) []string {
+	return []string{"sbx", "secret", "set", "github", "--sandbox", sandbox, "-f", "-t", token}
+}
 
 // parseGitHubRemote turns an origin URL into owner and repo. Accepted: https://github.com/o/r(.git),
 // git@github.com:o/r(.git) and ssh://git@github.com/o/r(.git).
@@ -353,6 +361,7 @@ func ghTokenCmd(g *GitHubConfig, project, candidate string, dryRun bool) error {
 		return nil
 	}
 	if err := sbxSecretSet(target, s.token); err != nil {
+		s.revoke()
 		return err
 	}
 	fmt.Printf("GitHub token: set in %s, valid until %s (not refreshed; run --gh-token again after that)\n",
