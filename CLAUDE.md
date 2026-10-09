@@ -120,11 +120,18 @@ mind when touching this code:
   `build.release` into `Version` and warns. A `template:` beside `build:` is ignored and not validated
   (it named the image tag, not the template); `version` and `build.release` must agree if both are set.
 - **Defaults are not written down.** `agent` falls back to `defaultAgent` (`claude`) in `run()`, `clone`
-  defaults off, and `--init` writes only `template:` plus a *commented* example pin. The example uses the
-  release version, not the image's: `version` pins the release (`templates-v...`), and the two counters
-  are independent, so `version: 0.2.8` can build an image `0.2.5` (the start-up line prints both).
-- **`--init` needs no network to be valid.** Its fallback body is `template: dotnet10`, because a template
-  is just a name resolved on first run.
+  defaults off, and in what `--init` writes only `template:` is live: every other key is a *comment*. The
+  example pin uses the release version, not the image's: `version` pins the release (`templates-v...`), and
+  the two counters are independent, so `version: 0.2.8` can build an image `0.2.5` (the start-up line
+  prints both). A fork gets a live `version:` and no commented pin, since uncommenting it would make two.
+- **The commented keys come from `configDocs` (`configdoc.go`)**, one entry per key with its example and
+  comment; `renderConfig` writes `template`/`version` itself. `TestConfigDocsCoverEveryKey` reflects over
+  `Config` and `GitHubConfig` and fails when a field has no entry there or is missing from `usage`, and
+  `TestConfigDocsUncommentToAValidConfig` loads every block with its `# ` removed. Adding a config key
+  therefore means adding it in three places, and the test names the one forgotten.
+- **`--init` needs no network to be valid.** Its fallback body is `renderConfig("template: dotnet10", …)`,
+  because a template is just a name resolved on first run. It never overwrites an existing file; the
+  warning points to `--init --dry-run`, which prints the template anyway.
 - **`--build` is still parsed** (and ignored) so an old script does not leak it through to `sbx run`.
 - **Older sbxup cannot read the new shape.** It would try to pull an image called `dotnet10`; mention it
   in the release notes when this ships.

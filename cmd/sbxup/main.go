@@ -56,8 +56,13 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
     - ../docs
   github:              # optional: short-lived GitHub App token for the repo in 'origin'
     bitwarden-item: github-deneblab-agent   # holds the app's client-id field and .pem key
+    key-attachment: app.private-key.pem     # optional (default: the item's only .pem attachment)
+    client-id-field: client-id              # optional (default: client-id)
+    app-id-field: app-id                    # optional: used when the client-id field is missing
     repositories: [docs]                    # optional: more repos of the same owner
     permissions: {contents: write}          # optional (default: contents, pull_requests, issues: write)
+
+'sbxup --init' writes all of these as comments, with only 'template' live.
 
 When a newer version of a template is available, sbxup keeps running the one you have and asks
 before building the new one. Without a terminal it does not ask; --update builds it.

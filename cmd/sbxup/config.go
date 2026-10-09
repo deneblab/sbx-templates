@@ -30,8 +30,7 @@ const defaultAgent = "claude"
 
 // defaultConfigBody is what --init writes when it cannot list the release (no network, no
 // terminal). It needs no network to be valid: a template is just a name, resolved on first run.
-const defaultConfigBody = `template: dotnet10
-`
+var defaultConfigBody = renderConfig("template: dotnet10", "", "")
 
 // BuildConfig is the deprecated `build:` block, still read so existing configs keep working.
 // It is folded into Config.Template and Config.Version: every template is built locally now, so
@@ -362,16 +361,13 @@ func buildConfigBody(t *TemplateEntry, ref releaseRef) string {
 	if name == "" {
 		name = t.Name
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "template: %s   # built locally from src/%s/Dockerfile in the release tarball\n", name, t.Name)
+	live := ""
 	if !ref.isDefaultSource() {
-		fmt.Fprintf(&b, "version: %s   # this template comes from a fork\n",
-			releaseRef{Owner: ref.Owner, Repo: ref.Repo})
+		live = releaseRef{Owner: ref.Owner, Repo: ref.Repo}.String()
 	}
-	if pin := strings.TrimPrefix(ref.Tag, templatesTagPrefix); pin != "" {
-		fmt.Fprintf(&b, "# version: %s   # pin the release to freeze the environment; without it sbxup follows the latest\n", pin)
-	}
-	return b.String()
+	return renderConfig(
+		fmt.Sprintf("template: %s   # built locally from src/%s/Dockerfile in the release tarball", name, t.Name),
+		live, strings.TrimPrefix(ref.Tag, templatesTagPrefix))
 }
 
 // initConfig writes the default starter config, refusing to clobber an existing one.
@@ -385,7 +381,7 @@ func initConfigBody(path, body string) error {
 		path = defaultConfigPath
 	}
 	if _, err := os.Stat(path); err == nil {
-		warnf("Config file already exists: %s", path)
+		warnf("Config file already exists: %s ('sbxup --init --dry-run' prints the full template without writing it)", path)
 		return nil
 	}
 	if dir := filepath.Dir(path); dir != "" && dir != "." {

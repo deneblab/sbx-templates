@@ -328,14 +328,33 @@ sbxup --init          # lists the templates in the latest release, you pick one
 sbxup                 # builds it locally the first time, then reuses the image
 ```
 
-`--init` writes just the template name, plus a commented example of a pin:
+`--init` writes the template name and every other key as a commented example, so the file shows
+what can be set:
 
 ```yaml
 template: dotnet10   # built locally from src/sbx-claude-dotnet10/Dockerfile in the release tarball
-# version: 0.2.8   # pin the release to freeze the environment; without it sbxup follows the latest
+
+# version: 0.2.8     # pin the release to freeze the environment; without it sbxup follows the latest
+# agent: claude      # agent passed to 'sbx run' (default: claude)
+# clone: true        # run on a private in-container git clone (default: off)
+# cache: .sbx-cache  # project directory mounted into the sandbox for package caches
+
+# Extra host directories mounted into the sandbox; append :ro for read-only.
+# ...
+# mounts:
+#   - ../shared-libs:ro
+
+# Short-lived GitHub App token for the repo in 'origin', renewed while 'sbx run' lasts.
+# ...
+# github:
+#   bitwarden-item: github-deneblab-agent  # item with a .pem attachment and a client-id field
+#   ...
 ```
 
-**No version appears anywhere**, which is the point: you name a template, not a release tag.
+**Only `template` is live**, which is the point: you name a template, not a release tag, and no
+default is written down, so a default that changes in a later sbxup still reaches your config.
+Uncomment a block to use it. `--init` never overwrites an existing config; `sbxup --init --dry-run`
+prints the full template so you can copy what you need.
 
 ### Choosing a release
 
