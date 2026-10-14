@@ -25,6 +25,9 @@ var configDocs = []configDoc{
 	{Key: "agent", Lines: []string{
 		"agent: claude      # agent passed to 'sbx run' (default: claude)",
 	}},
+	{Key: "sandbox", Lines: []string{
+		"sandbox: app.claude # sandbox name (default: <parent>.<folder>.<agent>, e.g. deneblab.app.claude)",
+	}},
 	{Key: "clone", Lines: []string{
 		"clone: true        # run on a private in-container git clone (default: off)",
 	}},

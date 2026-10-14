@@ -51,6 +51,7 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   template: dotnet10   # a template from the release, built locally on first use
   version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
   agent: claude        # optional (default: claude)
+  sandbox: app.claude  # optional: sandbox name (default: <parent>.<folder>.<agent>)
   clone: false         # optional: true => run on a private in-container git clone
   cache: .sbx-cache    # optional: mount local cache dir into sandbox
   mounts:              # optional: extra host directories; ':ro' for read-only
@@ -93,9 +94,9 @@ made by mistake; GraphQL and SSH stay open. Pushing to some repositories only is
 Mounts are checked before anything is built: the home directory and credential directories
 (~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
 
-Extra arguments are passed through to 'sbx run'. When a new sandbox is created first ('restrict:' or
-'github:'), they go to 'sbx create', except --detach, --detach-keys, --new, --rm and everything after
-'--', which go to the 'sbx run' that follows.
+Extra arguments are passed through to sbx. A new sandbox is created first ('sbx create --name'), so
+they go to 'sbx create', except --detach, --detach-keys, --new, --rm and everything after '--', which
+go to the 'sbx run' that follows. Resuming a sandbox passes none of them.
 `
 
 type options struct {
@@ -264,25 +265,24 @@ func run(argv []string) error {
 	agent := firstNonEmpty(o.agent, cfg.Agent, defaultAgent)
 
 	// --- Sandbox name ---------------------------------------------------------
-	// The candidate is what `sbx` most likely called the sandbox: agent + folder, verbatim.
-	// Every command that takes a name resolves it through `sbx ls` first and falls back to
-	// the candidate only when no sandbox exists yet.
+	// sbxup names every new sandbox itself (sbx create --name), so the name is known before it
+	// exists. Every command resolves it through `sbx ls` for sbx's exact spelling. A sandbox named
+	// the old way (agent-folder) is not looked for: it is left to the user to remove.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	folder := filepath.Base(cwd)
-	candidate := agent + "-" + folder
+	sandbox := sandboxName(cwd, agent, cfg.Sandbox)
 
 	switch {
 	case o.status:
-		return statusCmd(folder)
+		return statusCmd(sandbox)
 	case o.stop:
-		return stopCmd(candidate, o.dryRun)
+		return stopCmd(sandbox, o.dryRun)
 	case o.exec:
-		return execCmd(candidate, o.dryRun)
+		return execCmd(sandbox, o.dryRun)
 	case o.ghToken:
-		return ghTokenCmd(cfg.GitHub, cwd, candidate, o.dryRun)
+		return ghTokenCmd(cfg.GitHub, cwd, sandbox, o.dryRun)
 	case o.ghLogin:
 		return ghLoginCmd(cfg.GitHub, o.dryRun)
 	case o.ghLogout:
@@ -303,7 +303,7 @@ func run(argv []string) error {
 	}
 	// Looked up before the template so an update offer can say the sandbox will keep its image;
 	// the same answer decides below whether to resume it.
-	existing := resolveSandboxName(candidate)
+	existing := resolveSandboxName(sandbox)
 	cachePath := ""
 	if cfg.Cache != "" {
 		cachePath = filepath.Join(cwd, cfg.Cache)
@@ -353,16 +353,14 @@ func run(argv []string) error {
 	for _, m := range mounts {
 		workspaces = append(workspaces, m.Spec())
 	}
-	// With restrictions or a GitHub token, a new sandbox is created first and started second, so the
-	// policy rules and the token are in place before the agent runs. Otherwise one `sbx run` does both.
-	twoStep := existing == "" && (cfg.Restrict != nil || cfg.GitHub != nil)
-	var args, runExtra []string
+	// A new sandbox is created first and started second: `sbx create --name` is how it gets sbxup's
+	// name, and the policy rules and the GitHub token are then in place before the agent runs.
+	var runExtra []string
 	fresh := false
-	if twoStep {
+	if existing == "" {
 		createExtra, rest := splitRunArgs(o.extra)
 		runExtra = rest
-		sandbox := sandboxNameFor(candidate)
-		args = buildCreateArgs(template, agent, sandbox, cloneEnabled, workspaces, createExtra)
+		args := buildCreateArgs(template, agent, sandbox, cloneEnabled, workspaces, createExtra)
 		if o.dryRun {
 			fmt.Printf("[dry-run] sbx %s\n", strings.Join(args, " "))
 			if err := applyRestrictions(sandbox, cfg.Restrict, true, true); err != nil {
@@ -375,42 +373,30 @@ func run(argv []string) error {
 			return fmt.Errorf("sbx create failed: %w", err)
 		}
 		existing, fresh = sandbox, true
-	} else {
-		args = buildRunArgs(template, agent, cloneEnabled, workspaces, o.extra)
 	}
 
 	if o.dryRun {
-		if existing != "" {
-			if err := applyRestrictions(existing, cfg.Restrict, false, true); err != nil {
-				return err
-			}
-			fmt.Printf("[dry-run] sbx run --name %s\n", existing)
-			return nil
+		if err := applyRestrictions(existing, cfg.Restrict, false, true); err != nil {
+			return err
 		}
-		fmt.Printf("[dry-run] sbx %s\n", strings.Join(args, " "))
+		fmt.Printf("[dry-run] sbx run --name %s\n", existing)
 		return nil
 	}
 
-	if existing != "" {
-		if err := applyRestrictions(existing, cfg.Restrict, fresh, false); err != nil {
-			if fresh {
-				return fmt.Errorf("%w (sandbox %s was created but not started)", err, existing)
-			}
-			return err
+	if err := applyRestrictions(existing, cfg.Restrict, fresh, false); err != nil {
+		if fresh {
+			return fmt.Errorf("%w (sandbox %s was created but not started)", err, existing)
 		}
+		return err
 	}
 
 	if gh != nil {
-		// The sandbox has its name by now unless sbx picks it (no two-step start), in which case
-		// keepFresh sets the token as soon as sbx lists the sandbox.
-		if existing != "" {
-			if err := sbxSecretSet(existing, gh.token); err != nil {
-				warnf("GitHub token: %v", err)
-			}
+		if err := sbxSecretSet(existing, gh.token); err != nil {
+			warnf("GitHub token: %v", err)
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
-		go func() { defer close(done); gh.keepFresh(ctx, existing, candidate) }()
+		go func() { defer close(done); gh.keepFresh(ctx, existing) }()
 		defer func() { cancel(); <-done; gh.revoke() }()
 	}
 
@@ -418,11 +404,8 @@ func run(argv []string) error {
 		return runSbx(append([]string{"run", "--name", existing}, runExtra...)...)
 	}
 	// Resume an existing sandbox rather than failing on "already exists".
-	if existing != "" {
-		fmt.Printf("Resuming existing sandbox: %s\n", existing)
-		return runSbx("run", "--name", existing)
-	}
-	return runSbx(args...)
+	fmt.Printf("Resuming existing sandbox: %s\n", existing)
+	return runSbx("run", "--name", existing)
 }
 
 // initFlow writes a config, preferring one wired to a template from the latest templates-v*

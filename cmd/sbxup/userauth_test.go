@@ -418,7 +418,7 @@ func TestKeepFreshUserModeFollowsTheFile(t *testing.T) {
 		}
 		return true
 	}
-	s.keepFresh(ctx, "claude-sbx", "claude-sbx")
+	s.keepFresh(ctx, "claude-sbx")
 	s.revoke() // the fake server fails the test on any unexpected request
 
 	if strings.Join(*set, " ") != "claude-sbx=ghu_b" {

@@ -292,3 +292,50 @@ func TestSplitRunArgsAndCreateArgs(t *testing.T) {
 		t.Fatalf("create args\n got %s\nwant %s", strings.Join(args, " "), want)
 	}
 }
+
+func TestSandboxName(t *testing.T) {
+	p := filepath.FromSlash
+	for _, tc := range []struct{ cwd, agent, override, want string }{
+		{"/w/deneblab/sbx-templates", "claude", "", "deneblab.sbx-templates.claude"},
+		{"/home/u/my_org/My App", "claude", "", "my-org.My-App.claude"},
+		{"/proj", "claude", "", "proj.claude"},
+		{"/w/deneblab/sbx-templates", "claude", "mine.x", "mine.x"},
+	} {
+		if got := sandboxName(p(tc.cwd), tc.agent, tc.override); got != tc.want {
+			t.Errorf("sandboxName(%q, %q, %q) = %q, want %q", tc.cwd, tc.agent, tc.override, got, tc.want)
+		}
+	}
+	// The old agent-folder name folds differently, so an old sandbox is never resumed by mistake.
+	if foldName(sandboxName(p("/w/deneblab/sbx-templates"), "claude", "")) == foldName("claude-sbx-templates") {
+		t.Error("the new name matches an old sandbox")
+	}
+}
+
+func TestValidSandboxName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"deneblab.sbx-templates.claude": true,
+		"ab":                            true,
+		"a":                             false,
+		"default":                       false,
+		"x/y":                           false,
+		"my_app":                        false,
+		"-x":                            false,
+		".x":                            false,
+	} {
+		if got := validSandboxName(name); got != want {
+			t.Errorf("validSandboxName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestLoadConfigSandbox(t *testing.T) {
+	chdir(t)
+	write(t, "c.yaml", "template: dotnet10\nsandbox: app.claude\n")
+	if cfg, err := loadConfig("c.yaml"); err != nil || cfg.Sandbox != "app.claude" {
+		t.Fatalf("cfg = %+v, err = %v", cfg, err)
+	}
+	write(t, "c.yaml", "template: dotnet10\nsandbox: deneblab/app\n")
+	if _, err := loadConfig("c.yaml"); err == nil || !strings.Contains(err.Error(), "sandbox 'deneblab/app'") {
+		t.Fatalf("err = %v", err)
+	}
+}

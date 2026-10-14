@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 )
 
@@ -91,12 +92,11 @@ func sandboxNamesJSON(data []byte) ([]string, error) {
 
 // resolveSandboxName asks `sbx ls` for the real name of a sandbox.
 //
-// `sbx` derives the sandbox name from the folder itself and its exact rule is undocumented —
-// it does preserve case (folder "AbcVersion" -> sandbox "claude-AbcVersion"), so mirroring it
-// here is guesswork that produces names `sbx run --name` / `sbx stop` cannot resolve. Ask
-// `sbx ls` instead and return the name exactly as it reports it. Returns "" when nothing matches.
-func resolveSandboxName(candidate string) string {
-	key := foldName(candidate)
+// sbxup names every new sandbox itself (sandboxName), but names are compared folded, so the one
+// `sbx ls` reports is returned exactly as spelled there, which is what `sbx run --name` and
+// `sbx stop` need. Returns "" when nothing matches.
+func resolveSandboxName(sandbox string) string {
+	key := foldName(sandbox)
 	for _, name := range sbxNames() {
 		if name != "" && foldName(name) == key {
 			return name
@@ -105,31 +105,12 @@ func resolveSandboxName(candidate string) string {
 	return ""
 }
 
-// buildRunArgs assembles the `sbx run` argument list. Kept free of side effects so tests can
-// assert the exact command line, which is the cross-platform parity criterion.
-//
-// workspaces are the extra directories to mount (the cache, then the config's mounts), already in
-// the form sbx takes: `path` or `path:ro`. The project itself is emitted first, as ".", whenever
-// there are any — otherwise the first extra directory would become the primary workspace.
-func buildRunArgs(template, agent string, clone bool, workspaces []string, extra []string) []string {
-	args := []string{"run", "--template", template, agent}
-	if clone {
-		args = append(args, "--clone")
-	}
-	if len(workspaces) > 0 {
-		args = append(args, ".")
-		args = append(args, workspaces...)
-	}
-	args = append(args, extra...)
-	return args
-}
-
-// sandboxNameFor turns the candidate (agent-folder) into a name `sbx create --name` accepts: letters,
+// sandboxNameFor turns a raw name (parent.folder.agent) into one `sbx create --name` accepts: letters,
 // digits, '-' and '.', at least two characters, not "default". Every other character becomes '-'.
 // resolveSandboxName folds names, so a later start finds the sandbox under either spelling.
-func sandboxNameFor(candidate string) string {
+func sandboxNameFor(raw string) string {
 	var b strings.Builder
-	for _, r := range candidate {
+	for _, r := range raw {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '.' {
 			b.WriteRune(r)
 		} else {
@@ -141,6 +122,34 @@ func sandboxNameFor(candidate string) string {
 		name = "sbx-" + name
 	}
 	return name
+}
+
+// sandboxName is the name sbxup gives the project's sandbox: the config's `sandbox:` verbatim, or
+// `<parent>.<folder>.<agent>` (deneblab.sbx-templates.claude), which tells apart two projects that
+// share a folder name. A project at a filesystem or drive root has no parent: `<folder>.<agent>`.
+func sandboxName(cwd, agent, override string) string {
+	if override != "" {
+		return override
+	}
+	name := filepath.Base(cwd) + "." + agent
+	if dir := filepath.Dir(cwd); filepath.Dir(dir) != dir {
+		name = filepath.Base(dir) + "." + name
+	}
+	return sandboxNameFor(name)
+}
+
+// validSandboxName reports whether a name from the config passes `sbx create --name` unchanged:
+// the same rules sandboxNameFor enforces, checked instead of applied, because the user typed it.
+func validSandboxName(name string) bool {
+	if len(name) < 2 || strings.EqualFold(name, "default") || strings.IndexAny(name[:1], "-.") == 0 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 // runOnlyFlags are the `sbx run` flags `sbx create` does not take (sbx 0.48).
@@ -169,8 +178,13 @@ func splitRunArgs(extra []string) (create, run []string) {
 	return create, run
 }
 
-// buildCreateArgs is buildRunArgs for `sbx create`, with the sandbox name sbxup chose, so policy rules
-// and the GitHub token can be set before `sbx run --name` starts the agent.
+// buildCreateArgs assembles the `sbx create` argument list, with the sandbox name sbxup chose, so policy
+// rules and the GitHub token can be set before `sbx run --name` starts the agent. Kept free of side
+// effects so tests can assert the exact command line, which is the cross-platform parity criterion.
+//
+// workspaces are the extra directories to mount (the cache, then the config's mounts), already in
+// the form sbx takes: `path` or `path:ro`. The project itself is emitted first, as ".", whenever
+// there are any — otherwise the first extra directory would become the primary workspace.
 func buildCreateArgs(template, agent, name string, clone bool, workspaces, extra []string) []string {
 	args := []string{"create", "--name", name, "--template", template, agent}
 	if clone {
@@ -199,9 +213,9 @@ var runSbx = func(args ...string) error {
 	return cmd.Run()
 }
 
-func statusCmd(folder string) error {
-	fmt.Printf("Sandboxes matching '%s':\n", folder)
-	key := foldName(folder)
+func statusCmd(sandbox string) error {
+	fmt.Printf("Sandboxes matching '%s':\n", sandbox)
+	key := foldName(sandbox)
 	found := false
 	for _, line := range sbxList() {
 		if line == "" {
@@ -218,28 +232,28 @@ func statusCmd(folder string) error {
 	return nil
 }
 
-func stopCmd(candidate string, dryRun bool) error {
+func stopCmd(sandbox string, dryRun bool) error {
 	if dryRun {
-		fmt.Printf("[dry-run] sbx stop %s\n", candidate)
+		fmt.Printf("[dry-run] sbx stop %s\n", sandbox)
 		return nil
 	}
-	target := resolveSandboxName(candidate)
+	target := resolveSandboxName(sandbox)
 	if target == "" {
-		warnf("No sandbox found matching '%s'.", candidate)
+		warnf("No sandbox found matching '%s'.", sandbox)
 		return nil
 	}
 	fmt.Printf("Stopping sandbox: %s\n", target)
 	return runSbx("stop", target)
 }
 
-func execCmd(candidate string, dryRun bool) error {
+func execCmd(sandbox string, dryRun bool) error {
 	if dryRun {
-		fmt.Printf("[dry-run] sbx exec -it %s bash\n", candidate)
+		fmt.Printf("[dry-run] sbx exec -it %s bash\n", sandbox)
 		return nil
 	}
-	target := resolveSandboxName(candidate)
+	target := resolveSandboxName(sandbox)
 	if target == "" {
-		warnf("No sandbox found matching '%s'.", candidate)
+		warnf("No sandbox found matching '%s'.", sandbox)
 		return nil
 	}
 	fmt.Printf("Exec into: %s\n", target)

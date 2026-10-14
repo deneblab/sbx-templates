@@ -56,6 +56,8 @@ type Config struct {
 	// independent, which is why the start-up line prints both.
 	Version string
 	Agent   string
+	// Sandbox names the sandbox verbatim; empty means sandboxName's <parent>.<folder>.<agent>.
+	Sandbox string
 	Clone   bool
 	Cache   string
 	// Mounts are extra host directories, each `path` or `path:ro`. Kept raw: they are resolved and
@@ -135,6 +137,12 @@ func loadConfig(path string) (*Config, error) {
 			cfg.Version = scalarString(val)
 		case "agent":
 			cfg.Agent = scalarString(val)
+		case "sandbox":
+			cfg.Sandbox = scalarString(val)
+			if !validSandboxName(cfg.Sandbox) {
+				return nil, fmt.Errorf("sandbox '%s' in %s: use letters, digits, '-' and '.', at least two "+
+					"characters, not starting with '-' or '.', and not 'default'", cfg.Sandbox, path)
+			}
 		case "cache":
 			cfg.Cache = scalarString(val)
 		case "clone":
@@ -167,7 +175,7 @@ func loadConfig(path string) (*Config, error) {
 			warnf("Key 'branch' in %s is no longer supported ('sbx run' dropped --branch). "+
 				"Rename it to 'clone: true|false'.", path)
 		default:
-			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache, mounts, github, restrict)", key, path)
+			warnf("Unknown key '%s' in %s (expected: template, version, agent, sandbox, clone, cache, mounts, github, restrict)", key, path)
 		}
 	}
 

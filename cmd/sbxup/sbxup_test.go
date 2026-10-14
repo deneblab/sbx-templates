@@ -245,7 +245,7 @@ func TestFoldName(t *testing.T) {
 	}
 }
 
-func TestBuildRunArgs(t *testing.T) {
+func TestBuildCreateArgs(t *testing.T) {
 	tests := []struct {
 		name       string
 		clone      bool
@@ -255,43 +255,43 @@ func TestBuildRunArgs(t *testing.T) {
 	}{
 		{
 			name: "minimal",
-			want: "run --template img:1 claude",
+			want: "create --name app.claude --template img:1 claude",
 		},
 		{
 			name:  "clone",
 			clone: true,
-			want:  "run --template img:1 claude --clone",
+			want:  "create --name app.claude --template img:1 claude --clone",
 		},
 		{
 			name:       "cache mounts the workspace pair",
 			workspaces: []string{"/w/proj/.sbx-cache"},
-			want:       "run --template img:1 claude . /w/proj/.sbx-cache",
+			want:       "create --name app.claude --template img:1 claude . /w/proj/.sbx-cache",
 		},
 		{
 			name:       "clone and cache and passthrough",
 			clone:      true,
 			workspaces: []string{"/w/proj/.sbx-cache"},
 			extra:      []string{"--foo", "bar"},
-			want:       "run --template img:1 claude --clone . /w/proj/.sbx-cache --foo bar",
+			want:       "create --name app.claude --template img:1 claude --clone . /w/proj/.sbx-cache --foo bar",
 		},
 		{
 			// Without the leading ".", the first extra directory would become the primary workspace.
 			name:       "mounts alone still start with the project",
 			workspaces: []string{"/home/u/libs:ro"},
-			want:       "run --template img:1 claude . /home/u/libs:ro",
+			want:       "create --name app.claude --template img:1 claude . /home/u/libs:ro",
 		},
 		{
 			name:       "cache, then mounts, then passthrough",
 			workspaces: []string{"/w/proj/.sbx-cache", "/home/u/libs:ro", "/w/docs"},
 			extra:      []string{"--foo"},
-			want:       "run --template img:1 claude . /w/proj/.sbx-cache /home/u/libs:ro /w/docs --foo",
+			want:       "create --name app.claude --template img:1 claude . /w/proj/.sbx-cache /home/u/libs:ro /w/docs --foo",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := strings.Join(buildRunArgs("img:1", "claude", tc.clone, tc.workspaces, tc.extra), " ")
+			got := strings.Join(buildCreateArgs("img:1", "claude", "app.claude", tc.clone, tc.workspaces, tc.extra), " ")
 			if got != tc.want {
-				t.Errorf("buildRunArgs = %q, want %q", got, tc.want)
+				t.Errorf("buildCreateArgs = %q, want %q", got, tc.want)
 			}
 		})
 	}

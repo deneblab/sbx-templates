@@ -103,6 +103,7 @@ project/
 template: dotnet10   # a template from the templates-v* release, built locally on first use
 version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
 agent: claude        # optional (default: claude)
+sandbox: app.claude  # optional: sandbox name (default: <parent>.<folder>.<agent>)
 clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
 ```
@@ -142,9 +143,25 @@ When `clone: true` (or `--clone`), `sbxup` passes `--clone` to `sbx run` so the 
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace. If not set, no cache mounting occurs.
 
+### The sandbox name is sbxup's (`sandboxName` in `sbx.go`)
+
+`<parent>.<folder>.<agent>`, e.g. `deneblab.sbx-templates.claude`, through `sandboxNameFor` (characters
+other than letters, digits, `-` and `.` become `-`); a project at a filesystem or drive root gets
+`<folder>.<agent>`. `sandbox:` replaces it verbatim. Things worth keeping in mind:
+
+- **`/` is impossible**: `sbx create --name` takes only letters, digits, `-` and `.`, hence the dots.
+- **sbxup always names the sandbox**, so every new one is created in two steps (`sbx create --name`, then
+  `sbx run --name`, see "Repository restrictions"); `sbx run` never picks a name. One name serves the run,
+  `--stop`, `--exec`, `--status`, `--gh-token` and `keepFresh`; `resolveSandboxName` only finds sbx's spelling.
+- **No migration, on purpose.** The old `<agent>-<folder>` is not looked for: it folds differently
+  (`claudesbxtemplates` vs `deneblabsbxtemplatesclaude`), so the first start after the update creates a new
+  sandbox and the old one waits for `sbx rm`. Say so in the release notes.
+- **`sandbox:` is validated, not rewritten** (`validSandboxName`): the user typed it, so `x/y` is an error
+  at load time rather than a sandbox called `x-y`.
+
 ### `mounts:` — extra host directories (`mounts.go`)
 
-A list of `path` or `path:ro`, the syntax `sbx run` already takes for an extra workspace; `buildRunArgs`
+A list of `path` or `path:ro`, the syntax `sbx run` already takes for an extra workspace; `buildCreateArgs`
 receives the cache and the mounts as one `workspaces` list and always emits `.` first when it is not
 empty (otherwise the first extra directory becomes the primary workspace). Things worth keeping in mind:
 
@@ -220,8 +237,7 @@ keeping in mind:
 - **The session outlives `sbx run`.** `run()` starts `keepFresh` beside `runSbx` and, after it returns,
   cancels it, waits for it and revokes the last token. A refresh mints 15 minutes before expiry, sets the
   new token and revokes the old one. A new sandbox is created first (`sbx create --name`, see
-  "Repository restrictions"), so the token is set before the agent starts; the poll of `sbx ls` (up to
-  2 minutes) in `keepFresh` remains for a sandbox whose name sbx picks.
+  "Repository restrictions"), so the token is set before the agent starts.
 - **Ctrl+C.** `runSbx` catches `os.Interrupt` with `signal.Notify` while the child runs, so sbxup lives to
   revoke the token. Not `signal.Ignore`: an ignored signal is inherited by the child.
 - **`sbx secret set` needs `-f`** (`sbxSecretSetArgs`): without it sbx refuses to replace an existing
@@ -239,8 +255,8 @@ keeping in mind:
   - a resumed sandbox gets the new token without warnings (`-f`).
 
   `bw` sees fields added in the app only after `bw sync`. `sbx secret set` also works for a sandbox that
-  does not exist yet; the poll in `keepFresh` was kept anyway (a deliberate choice: the token arrives
-  within seconds, and the poll does not depend on guessing the name sbx will pick).
+  does not exist yet. The poll of `sbx ls` that `keepFresh` once had for a sandbox sbx named is gone:
+  sbxup names every sandbox now (SBXT-010).
 
 ### Your own login: `github: client-id` (`userauth.go`)
 
@@ -290,10 +306,10 @@ over HTTPS, the GitHub API writes that create commits (contents, git/*, merges),
 - **No approval, and a failure stops the start.** Deny rules only narrow, so a repository may ask for them.
   A rule that cannot be applied is an error (sandbox created but not started), unlike the GitHub token,
   where going without is the safe direction. Unknown keys and non-boolean values are errors.
-- **Create, then run.** With `restrict:` or `github:`, a new sandbox is made with
-  `sbx create --name <sandboxNameFor(candidate)> …`, then rules and the token are set, then
-  `sbx run --name`. `splitRunArgs` sends `--detach`, `--detach-keys`, `--new`, `--rm` and everything after
-  `--` to `run`, the rest to `create`. Without either key the single `sbx run` is unchanged.
+- **Create, then run.** Every new sandbox is made with `sbx create --name <sandboxName(…)> …`, then rules
+  and the token are set, then `sbx run --name`. `splitRunArgs` sends `--detach`, `--detach-keys`, `--new`,
+  `--rm` and everything after `--` to `run`, the rest to `create`. (Until SBXT-010 this happened only with
+  `restrict:` or `github:`; otherwise a single `sbx run` let sbx pick the name.)
 - **Reconciled on every start, owned rules only.** `sbx policy ls N --json` (`{"rules": [...]}`; HTTP rules
   have `resource_type: http`, `methods`, `http_targets[{host,path}]`, `scope: sandbox:N`) gives what is in
   place; adding an existing rule is a no-op anyway ("Already covered"). `sbxup/restrict/<sandbox>.json` in the

@@ -263,40 +263,13 @@ func TestKeepFreshRefreshesAndRevokesTheOldToken(t *testing.T) {
 		}
 		return true
 	}
-	s.keepFresh(ctx, "claude-sbx", "claude-sbx")
+	s.keepFresh(ctx, "claude-sbx")
 
 	if strings.Join(*set, " ") != "claude-sbx=ghs_1 claude-sbx=ghs_2" {
 		t.Fatalf("secrets set: %v", *set)
 	}
 	if strings.Join(f.revoked, " ") != "ghs_0 ghs_1" {
 		t.Fatalf("old tokens revoked: %v", f.revoked)
-	}
-}
-
-func TestKeepFreshWaitsForANewSandbox(t *testing.T) {
-	set := stubSecrets(t)
-	polls := 0
-	origList, origSleep := sbxList, sleepCtx
-	t.Cleanup(func() { sbxList, sleepCtx = origList, origSleep })
-	sbxList = func() []string {
-		polls++
-		if polls < 3 {
-			return nil
-		}
-		return []string{"NAME  STATUS", "claude-SBX  running"}
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	sleepCtx = func(ctx context.Context, d time.Duration) bool {
-		if d == pollEvery {
-			return true
-		}
-		cancel()
-		return false
-	}
-	s := &ghSession{token: "ghs_0", expires: now().Add(time.Hour)}
-	s.keepFresh(ctx, "", "claude-sbx")
-	if strings.Join(*set, " ") != "claude-SBX=ghs_0" {
-		t.Fatalf("secrets set: %v", *set)
 	}
 }
 

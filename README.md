@@ -99,6 +99,7 @@ With every key:
 template: dotnet10   # a template from the templates-v* release, built locally on first use
 version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
 agent: claude        # optional (default: claude)
+sandbox: app.claude  # optional: sandbox name (default: <parent>.<folder>.<agent>)
 clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
 mounts:              # optional: extra host directories; ':ro' for read-only (see below)
@@ -106,6 +107,12 @@ mounts:              # optional: extra host directories; ':ro' for read-only (se
 github:              # optional: a short-lived GitHub App token for the sandbox (see below)
   bitwarden-item: github-deneblab-agent
 ```
+
+The sandbox is named after the project and its parent directory: `/w/deneblab/sbx-templates` gets
+`deneblab.sbx-templates.claude` (a project at a drive or filesystem root: `<folder>.<agent>`), so two
+projects that share a folder name in different organizations get different sandboxes. `sandbox:` sets the
+name verbatim (letters, digits, `-` and `.`). A sandbox from an older `sbxup` (`claude-<folder>`) is not
+resumed: the next start creates a new one, and `sbx rm claude-<folder>` removes the old one.
 
 Not a config key: `sbxup` also imports your skills into sbx's store (see "Skills" below); `--no-skills` skips it.
 

@@ -36,8 +36,6 @@ const (
 	// GitHub's one-hour tokens.
 	refreshBefore = 15 * time.Minute
 	retryAfter    = time.Minute
-	// sandboxWait bounds the wait for a new sandbox to show up in `sbx ls`.
-	sandboxWait = 2 * time.Minute
 )
 
 // userPollEvery is how often a session with a shared user token looks at the login file, so a token
@@ -65,7 +63,6 @@ var (
 		return nil
 	}
 	askGitHub = func(question string) (bool, bool) { return askYesNo(os.Stdin, os.Stdout, question) }
-	pollEvery = time.Second
 	sleepCtx  = func(ctx context.Context, d time.Duration) bool {
 		t := time.NewTimer(d)
 		defer t.Stop()
@@ -392,34 +389,11 @@ func prepareAppToken(g *GitHubConfig, project string, dryRun bool) *ghSession {
 	return s
 }
 
-// keepFresh gives the token to the sandbox and replaces it before it expires, until ctx ends.
-// For a new sandbox (name == "") it first waits for candidate to appear in `sbx ls`, since sbx
-// names it only once `sbx run` has started; a resumed one got the token from run() already.
+// keepFresh replaces the token before it expires, until ctx ends; run() gave the sandbox the first one.
 // A user token is shared, so that session looks at the login file every userPollEvery and passes on
 // a token that another sbxup refreshed.
-func (s *ghSession) keepFresh(ctx context.Context, name, candidate string) {
-	if name != "" {
-		s.sent = s.token
-	} else {
-		deadline := now().Add(sandboxWait)
-		for name == "" {
-			if name = resolveSandboxName(candidate); name != "" {
-				break
-			}
-			if now().After(deadline) {
-				warnf("GitHub token: sandbox %s did not appear in 'sbx ls'; it has no token. Run 'sbxup --gh-token' to set one.", candidate)
-				return
-			}
-			if !sleepCtx(ctx, pollEvery) {
-				return
-			}
-		}
-		if err := sbxSecretSet(name, s.token); err != nil {
-			warnf("GitHub token: %v", err)
-		} else {
-			s.sent = s.token
-		}
-	}
+func (s *ghSession) keepFresh(ctx context.Context, name string) {
+	s.sent = s.token
 	lastErr := ""
 	for {
 		wait := userPollEvery
@@ -458,13 +432,13 @@ func (s *ghSession) keepFresh(ctx context.Context, name, candidate string) {
 
 // ghTokenCmd is `sbxup --gh-token`: one token for the sandbox that already runs for this project,
 // e.g. from a second terminal. It is not refreshed or revoked; it simply expires.
-func ghTokenCmd(g *GitHubConfig, project, candidate string, dryRun bool) error {
+func ghTokenCmd(g *GitHubConfig, project, sandbox string, dryRun bool) error {
 	if g == nil {
 		return errors.New("--gh-token needs a 'github:' block with 'client-id' or 'bitwarden-item' in the config")
 	}
-	target := resolveSandboxName(candidate)
+	target := resolveSandboxName(sandbox)
 	if target == "" && !dryRun {
-		return fmt.Errorf("no sandbox found matching '%s'; start it with sbxup first", candidate)
+		return fmt.Errorf("no sandbox found matching '%s'; start it with sbxup first", sandbox)
 	}
 	s := prepareGitHubToken(g, project, false, dryRun)
 	if s == nil {
