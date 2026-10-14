@@ -371,7 +371,9 @@ SBXT-011, GitHub #2. Things worth keeping in mind:
   superuser, `sudo -n true` → password required, git works, the host's `dev` untouched. Case variants (`DEV`,
   `robenova` under `/mnt/host`) land on the cover. Both covers come back after `sbx stop` + start. On a resume,
   adding an entry made two more covers, and removing it took away exactly those two and their directories while
-  the `dev` covers kept working. **Not yet verified:** Linux and macOS hosts.
+  the `dev` covers kept working. **Linux (WSL, repo on the WSL disk)** behaves the same: `/mnt/host` appears
+  there too and gets its cover from `~/.config/sbxup/hide/`, case variants do not exist, and both covers come
+  back after a restart. **Not yet verified:** macOS.
 
 ## Local Templates Without Docker Hub
 
