@@ -160,18 +160,33 @@ func TestEnsureCover(t *testing.T) {
 	}
 }
 
-// fakeHide stubs every sbx call applyHide makes and records them.
+// fakeHide stubs every sbx call applyHide makes, records them, and keeps a sandbox's mount table the way
+// sbx 0.48 behaved on a host: the workspace at /w/app, and /mnt/host (the whole allowlist) once the first
+// dynamic mount exists. A directory lists "secret.txt" unless a cover sits exactly on it.
 type fakeHide struct {
 	mountFail, sudoFail, notRunningOnce bool
+	noMntHost, leak, findmntFail        bool
 	calls, notices                      []string
+	mounts                              []sbxMountInfo
+}
+
+func (f *fakeHide) reset() {
+	f.mounts = []sbxMountInfo{
+		{Target: "/", Source: "overlay", FSType: "overlay"},
+		{Target: "/w/app", Source: "host[/w/app]", FSType: "virtiofs"},
+		{Target: "/etc/resolv.conf", Source: "bind-95f0[/resolv.conf]", FSType: "virtiofs"},
+	}
 }
 
 func (f *fakeHide) install(t *testing.T) {
 	t.Helper()
 	configHome(t)
+	f.reset()
 	origStart, origMount, origUmount, origSudo, origExec := sbxStart, sbxMount, sbxUmount, dropSudo, sbxExecStdin
+	origFind, origLs := sbxFindmnt, sbxListDir
 	t.Cleanup(func() {
 		sbxStart, sbxMount, sbxUmount, dropSudo, sbxExecStdin = origStart, origMount, origUmount, origSudo, origExec
+		sbxFindmnt, sbxListDir = origFind, origLs
 	})
 	sbxStart = func(s string) error { f.calls = append(f.calls, "start "+s); return nil }
 	sbxMount = func(s, src, target string) error {
@@ -186,9 +201,22 @@ func (f *fakeHide) install(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(src, "HIDDEN.txt")); err != nil {
 			t.Errorf("mounted %s without its cover", src)
 		}
+		if !f.noMntHost && !f.has("/mnt/host") {
+			f.mounts = append(f.mounts, sbxMountInfo{Target: "/mnt/host", Source: "host", FSType: "virtiofs"})
+		}
+		f.mounts = append(f.mounts, sbxMountInfo{Target: target, Source: "host[/c/u/sbxup/hide/" + filepath.Base(src) + "]", FSType: "virtiofs"})
 		return nil
 	}
-	sbxUmount = func(s, src, target string) error { f.calls = append(f.calls, "umount "+s+" "+target); return nil }
+	sbxUmount = func(s, src, target string) error {
+		f.calls = append(f.calls, "umount "+s+" "+target)
+		for i, m := range f.mounts {
+			if m.Target == target {
+				f.mounts = append(f.mounts[:i], f.mounts[i+1:]...)
+				break
+			}
+		}
+		return nil
+	}
 	dropSudo = func(s string) error {
 		f.calls = append(f.calls, "sudo "+s)
 		if f.sudoFail {
@@ -201,6 +229,39 @@ func (f *fakeHide) install(t *testing.T) {
 		f.notices = append(f.notices, stdin)
 		return nil
 	}
+	sbxFindmnt = func(s string) ([]sbxMountInfo, error) {
+		f.calls = append(f.calls, "findmnt "+s)
+		if f.findmntFail {
+			return nil, errors.New("no findmnt")
+		}
+		return append([]sbxMountInfo(nil), f.mounts...), nil
+	}
+	sbxListDir = func(s, dir string) ([]string, error) {
+		f.calls = append(f.calls, "ls "+dir)
+		if !f.leak && coveredAt(dir, f.mounts) {
+			return []string{"HIDDEN.txt"}, nil
+		}
+		return []string{"secret.txt"}, nil
+	}
+}
+
+func (f *fakeHide) has(target string) bool {
+	for _, m := range f.mounts {
+		if m.Target == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeHide) count(prefix string) int {
+	n := 0
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, prefix) {
+			n++
+		}
+	}
+	return n
 }
 
 func hp(entry string) hidePath {
@@ -208,10 +269,39 @@ func hp(entry string) hidePath {
 	return hidePath{Entry: entry, Host: p, Target: p}
 }
 
+func TestParseFindmntAndAliases(t *testing.T) {
+	// `findmnt -J -o TARGET,SOURCE,FSTYPE` from the host test (antipiracy.RobeNova.claude), trimmed.
+	const out = `{"filesystems": [{"target":"/","source":"overlay","fstype":"overlay","children":[
+	  {"target":"/mnt/host","source":"host","fstype":"virtiofs"},
+	  {"target":"/w/antipiracy/RobeNova","source":"host[/w/antipiracy/RobeNova]","fstype":"virtiofs","children":[
+	    {"target":"/w/antipiracy/RobeNova/dev","source":"host[/c/Users/pk/AppData/Roaming/sbxup/hide/antipiracy.robenova.claude/aebcc21bf842]","fstype":"virtiofs"}]},
+	  {"target":"/run","source":"tmpfs","fstype":"tmpfs","children":[
+	    {"target":"/run/sbx/skills-shared","source":"host[/c/Users/pk/AppData/Local/DockerSandboxes/sandboxes/state/agent-skills]","fstype":"virtiofs"}]},
+	  {"target":"/etc/resolv.conf","source":"bind-95f03ffa45a7d998[/resolv.conf]","fstype":"virtiofs"}]}]}`
+	mounts, err := parseFindmnt([]byte(out))
+	if err != nil || len(mounts) != 7 {
+		t.Fatalf("%d mounts, %v", len(mounts), err)
+	}
+	got := aliasesOf("/w/antipiracy/RobeNova/dev", mounts, true)
+	if strings.Join(got, " ") != "/mnt/host/w/antipiracy/RobeNova/dev /w/antipiracy/RobeNova/dev" {
+		t.Fatalf("aliases %v", got)
+	}
+	if !coveredAt("/w/antipiracy/RobeNova/dev", mounts) || coveredAt("/mnt/host/w/antipiracy/RobeNova/dev", mounts) {
+		t.Fatal("coveredAt")
+	}
+	// Case differs between the config and sbx's view on Windows; folded there, not on Linux.
+	if len(aliasesOf("/w/antipiracy/robenova/dev", mounts, true)) != 2 || len(aliasesOf("/w/antipiracy/robenova/dev", mounts, false)) != 1 {
+		t.Fatal("case folding")
+	}
+	if _, err := parseFindmnt([]byte(`[]`)); err == nil {
+		t.Fatal("accepted a non-findmnt document")
+	}
+}
+
 func TestApplyHideLifecycle(t *testing.T) {
 	f := &fakeHide{}
 	f.install(t)
-	call := func(hide []hidePath, fresh bool) {
+	call := func(hide []hidePath, fresh bool) string {
 		t.Helper()
 		f.calls, f.notices = nil, nil
 		capture(t, func() {
@@ -219,55 +309,70 @@ func TestApplyHideLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+		return strings.Join(f.calls, "; ")
 	}
 
-	// A new sandbox: start, cover, sudo gone, the agent told.
-	call([]hidePath{hp("dev")}, true)
-	if strings.Join(f.calls, "; ") != "start app.claude; mount app.claude /w/app/dev; sudo app.claude; exec app.claude" ||
-		!strings.Contains(f.notices[0], "`dev`") || !strings.Contains(f.notices[0], "sudo is not available") {
-		t.Fatalf("new sandbox: %v %q", f.calls, f.notices)
+	// A new sandbox: start, cover, cover /mnt/host which the first cover brought, check both, sudo, notice.
+	if got := call([]hidePath{hp("dev")}, true); got != "start app.claude; mount app.claude /w/app/dev; "+
+		"findmnt app.claude; mount app.claude /mnt/host/w/app/dev; findmnt app.claude; "+
+		"ls /w/app/dev; ls /mnt/host/w/app/dev; sudo app.claude; exec app.claude" {
+		t.Fatalf("new sandbox: %s", got)
+	}
+	if !strings.Contains(f.notices[0], "`dev`") || !strings.Contains(f.notices[0], "sudo is not available") {
+		t.Fatalf("notice %q", f.notices)
 	}
 
-	// A resume with the same config: not a single sbx call.
-	call([]hidePath{hp("dev")}, false)
-	if len(f.calls) != 0 {
-		t.Fatalf("resume: %v", f.calls)
+	// A resume with the same config: nothing mounted, but checked again.
+	if got := call([]hidePath{hp("dev")}, false); got != "start app.claude; findmnt app.claude; ls /w/app/dev; ls /mnt/host/w/app/dev" {
+		t.Fatalf("resume: %s", got)
 	}
 
-	// A new entry: start and mount it; sudo is already gone.
-	call([]hidePath{hp("dev"), hp("secrets")}, false)
-	if strings.Join(f.calls, "; ") != "start app.claude; mount app.claude /w/app/secrets; exec app.claude" {
-		t.Fatalf("adding secrets: %v", f.calls)
+	// A new entry: covered on both paths; sudo is already gone.
+	if got := call([]hidePath{hp("dev"), hp("secrets")}, false); got != "start app.claude; mount app.claude /w/app/secrets; "+
+		"findmnt app.claude; mount app.claude /mnt/host/w/app/secrets; findmnt app.claude; "+
+		"ls /w/app/dev; ls /mnt/host/w/app/dev; ls /w/app/secrets; ls /mnt/host/w/app/secrets; exec app.claude" {
+		t.Fatalf("adding secrets: %s", got)
 	}
 
-	// Dropping dev: unmounted (no start needed), its cover deleted, the other one kept.
+	// Dropping dev: both of its covers go and their directories are deleted; secrets stays and is checked.
 	devCover, _ := coverDir("app.claude", "/w/app/dev")
+	devExtra, _ := coverDir("app.claude", "/mnt/host/w/app/dev")
 	secretsCover, _ := coverDir("app.claude", "/w/app/secrets")
-	call([]hidePath{hp("secrets")}, false)
-	if strings.Join(f.calls, "; ") != "umount app.claude /w/app/dev; exec app.claude" {
-		t.Fatalf("dropping dev: %v", f.calls)
+	if got := call([]hidePath{hp("secrets")}, false); got != "umount app.claude /w/app/dev; umount app.claude /mnt/host/w/app/dev; "+
+		"start app.claude; findmnt app.claude; ls /w/app/secrets; ls /mnt/host/w/app/secrets; exec app.claude" {
+		t.Fatalf("dropping dev: %s", got)
 	}
-	if _, err := os.Stat(devCover); !os.IsNotExist(err) {
-		t.Fatalf("dev's cover is still there: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(secretsCover, "HIDDEN.txt")); err != nil {
-		t.Fatalf("secrets' cover went too: %v", err)
+	if fileExists(devCover) || fileExists(devExtra) || !fileExists(filepath.Join(secretsCover, "HIDDEN.txt")) {
+		t.Fatal("covers after dropping dev")
 	}
 
-	// Dropping everything: sudo stays off, and the notice says only that.
+	// Dropping everything: no start, sudo stays off, and the notice says only that.
 	var out string
 	f.calls, f.notices = nil, nil
 	out = capture(t, func() { applyHide("app.claude", nil, false, false) })
-	if strings.Join(f.calls, "; ") != "umount app.claude /w/app/secrets; exec app.claude" ||
+	if strings.Join(f.calls, "; ") != "umount app.claude /w/app/secrets; umount app.claude /mnt/host/w/app/secrets; exec app.claude" ||
 		strings.Contains(f.notices[0], "Hidden on purpose") || !strings.Contains(f.notices[0], "sudo is not available") ||
 		!strings.Contains(out, "sudo stays off") {
 		t.Fatalf("dropping all: %v %q\n%s", f.calls, f.notices, out)
 	}
 
 	// From then on nothing changes and nothing is called.
-	call(nil, false)
-	if len(f.calls) != 0 {
-		t.Fatalf("after dropping all: %v", f.calls)
+	if got := call(nil, false); got != "" {
+		t.Fatalf("after dropping all: %s", got)
+	}
+}
+
+func TestApplyHideWithoutMntHost(t *testing.T) {
+	// An sbx that brings no /mnt/host: one cover, one check.
+	f := &fakeHide{noMntHost: true}
+	f.install(t)
+	capture(t, func() {
+		if err := applyHide("app.claude", []hidePath{hp("dev")}, true, false); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if f.count("mount ") != 1 || f.count("ls ") != 1 {
+		t.Fatalf("%v", f.calls)
 	}
 }
 
@@ -287,16 +392,31 @@ func TestApplyHideFailures(t *testing.T) {
 		t.Fatalf("a failed mount must stop the start: %v %v", err, f.calls)
 	}
 
+	// A directory still readable somewhere: no sudo removal, no start.
+	fl := &fakeHide{leak: true}
+	fl.install(t)
+	err = applyHide("app.claude", []hidePath{hp("dev")}, true, false)
+	if err == nil || !strings.Contains(err.Error(), "still readable in the sandbox at /w/app/dev") || fl.count("sudo ") != 0 {
+		t.Fatalf("a readable directory must stop the start: %v %v", err, fl.calls)
+	}
+
+	ff := &fakeHide{findmntFail: true}
+	ff.install(t)
+	err = applyHide("app.claude", []hidePath{hp("dev")}, true, false)
+	if err == nil || !strings.Contains(err.Error(), "cannot list the sandbox's mounts") {
+		t.Fatalf("no way to check must stop the start: %v", err)
+	}
+
 	f2 := &fakeHide{sudoFail: true}
 	f2.install(t)
 	err = applyHide("app.claude", []hidePath{hp("dev")}, true, false)
 	if err == nil || !strings.Contains(err.Error(), "cannot remove sudo") {
 		t.Fatalf("sudo that stays must stop the start: %v", err)
 	}
-	// The cover is recorded, so the next start does not mount it again but retries sudo.
+	// Both covers are recorded, so the next start mounts nothing but retries sudo.
 	f2.sudoFail, f2.calls = false, nil
 	capture(t, func() { err = applyHide("app.claude", []hidePath{hp("dev")}, false, false) })
-	if err != nil || strings.Join(f2.calls, "; ") != "start app.claude; sudo app.claude; exec app.claude" {
+	if err != nil || f2.count("mount ") != 0 || f2.count("sudo ") != 1 {
 		t.Fatalf("retry: %v %v", f2.calls, err)
 	}
 
@@ -304,19 +424,9 @@ func TestApplyHideFailures(t *testing.T) {
 	f3 := &fakeHide{notRunningOnce: true}
 	f3.install(t)
 	capture(t, func() { err = applyHide("app.claude", []hidePath{hp("dev")}, true, false) })
-	if err != nil || f3.count("start ") != 2 || f3.count("mount ") != 2 {
+	if err != nil || f3.count("start ") != 2 || f3.count("mount app.claude /w/app/dev") != 2 {
 		t.Fatalf("not running: %v %v", f3.calls, err)
 	}
-}
-
-func (f *fakeHide) count(prefix string) int {
-	n := 0
-	for _, c := range f.calls {
-		if strings.HasPrefix(c, prefix) {
-			n++
-		}
-	}
-	return n
 }
 
 func TestApplyHideDryRun(t *testing.T) {
@@ -326,6 +436,7 @@ func TestApplyHideDryRun(t *testing.T) {
 	if len(f.calls) != 0 ||
 		!strings.Contains(out, "[dry-run] sbx exec app.claude true") ||
 		!strings.Contains(out, ":/w/app/dev:ro") ||
+		!strings.Contains(out, "findmnt") ||
 		!strings.Contains(out, "sudo -n rm -f /etc/sudoers.d/agent") {
 		t.Fatalf("dry-run: %v\n%s", f.calls, out)
 	}
@@ -343,8 +454,9 @@ func TestApplyHideFreshIgnoresAStaleRecord(t *testing.T) {
 	f.install(t)
 	capture(t, func() { applyHide("app.claude", []hidePath{hp("dev")}, true, false) })
 	f.calls = nil
+	f.reset()
 	capture(t, func() { applyHide("app.claude", []hidePath{hp("dev")}, true, false) })
-	if f.count("mount ") != 1 || f.count("sudo ") != 1 || f.count("exec ") != 1 {
+	if f.count("mount ") != 2 || f.count("sudo ") != 1 || f.count("exec ") != 1 {
 		t.Fatalf("fresh sandbox: %v", f.calls)
 	}
 }

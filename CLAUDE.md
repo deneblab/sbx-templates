@@ -348,16 +348,27 @@ SBXT-011, GitHub #2. Things worth keeping in mind:
   `sbx mount` needs a running sandbox and there is no `sbx start`; mount; drop sudo; notice) → token →
   `sbx run`. A mount that hits "not running" is retried once after another start (seen on a host).
   Resume: only the difference to the record (`sbx umount` works on a stopped sandbox, no start needed).
-- **Failure stops the start** (created, not started), like `restrict:`; a failed `sbx umount` is a warning.
+- **Every path to a hidden directory is covered, and checked on every start** (`coverEverywhere`). On a host
+  the first dynamic `sbx mount` brought `/mnt/host` (virtiofs, source `host`, every allowlisted host path, the
+  workspace included), and `/mnt/host/w/…/dev` was readable while `/w/…/dev` was covered. So after the first
+  cover sbxup reads `findmnt -J` in the sandbox, maps the hidden path under every virtiofs mount whose source
+  (`host` or `host[/x]`) contains it (`aliasesOf`), covers each, repeats until nothing is new, and then requires
+  `ls -A` to show exactly `HIDDEN.txt` on every path. Anything it cannot list or check stops the start. This
+  costs a start plus a few `sbx exec` on every resume of a sandbox with something hidden. Extra covers are
+  recorded with `of` = the configured target, so dropping an entry removes them too. `sbx umount` of a mount of
+  the hidden host path does **not** revoke access through the workspace (checked on a host).
 - **Sudo does not come back** when entries are removed; the message names `sbx rm`.
 - **Target path:** `sandboxPath` — the host path, on Windows `W:\x` → `/w/x` (what `sbx create` prints);
   UNC is an error. `sbx mount` creates a missing target, in the sandbox and empty on the host.
 - **Clone mode is refused** with `hide:`: the host repo stays readable at `/run/sandbox/source` (ro);
   covering there is not verified.
 - **The agent is told** in a `<!-- sbxup:hide -->` block (`blockScript`, shared with `restrict:`).
-- **Seams:** `sbxStart`, `sbxMount`, `sbxUmount`, `dropSudo`, `sbxExecStdin`; `TestMain` makes the first
-  four fail.
-- **Not yet verified on a host:** the sbxup flow end to end, mounts surviving `sbx run`, Linux and macOS.
+- **Seams:** `sbxStart`, `sbxMount`, `sbxUmount`, `dropSudo`, `sbxExecStdin`, `sbxFindmnt`, `sbxListDir`;
+  `TestMain` makes the first four fail, the last two go through `sbxOutput`. The test fake reproduces the
+  host's mount table (workspace, then `/mnt/host` after the first mount).
+- **Verified on a Windows host** (2026-10-14, `antipiracy.RobeNova.claude`): the workspace cover, ro, no sudo,
+  notice, host `dev` intact; then the `/mnt/host` leak, which `coverEverywhere` addresses. **Not yet verified:**
+  `coverEverywhere` itself (that `sbx mount` accepts a target under `/mnt/host`), Linux and macOS.
 
 ## Local Templates Without Docker Hub
 

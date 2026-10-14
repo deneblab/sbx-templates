@@ -273,7 +273,10 @@ hide:
 - **How.** `sbx` cannot leave part of a workspace out, so sbxup covers each directory with a read-only
   `sbx mount` of its own empty directory (`~/.config/sbxup/hide/`, `%APPDATA%\sbxup\hide\` on Windows,
   `~/Library/Application Support/sbxup/hide/` on macOS) before the agent starts. A directory that does not
-  exist yet is covered too (`sbx` creates it, empty, on the host).
+  exist yet is covered too (`sbx` creates it, empty, on the host). `sbx` can show the same directory at more
+  than one path (a dynamic mount brings `/mnt/host` with the whole workspace), so sbxup covers every path it
+  finds in the sandbox's mount table and, on every start, checks that each shows only `HIDDEN.txt`; if one
+  does not, the agent is not started.
 - **No sudo.** `sudo umount` would remove the cover, so the agent loses `sudo` in that sandbox: no
   `sudo apt-get install` there. Removing an entry later takes its cover away but does not bring `sudo`
   back; `sbx rm <name>` and a new start do. Sandboxes without anything to hide keep `sudo`.
