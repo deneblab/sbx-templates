@@ -43,9 +43,21 @@ var configDocs = []configDoc{
 		}},
 	{Key: "github",
 		Para: []string{
-			"Short-lived GitHub App token for the repo in 'origin', renewed while 'sbx run' lasts.",
-			"The app's private key is read from Bitwarden on the host ('bw'); only the token",
-			"reaches the sandbox. The first use per project asks for your approval.",
+			"GitHub token for the sandbox from your own login: run 'sbxup --gh-login' once per",
+			"machine, then no password and no key. It acts as you with the app's permissions, in",
+			"every organization where the app is installed. The first use per project asks for",
+			"your approval. Use this block or the Bitwarden one below, not both.",
+		},
+		Lines: []string{
+			"github:",
+			"  client-id: Iv23liAbc123                # the GitHub App's client ID (device flow enabled)",
+		}},
+	// A second entry for the same key: the Bitwarden mode, which cannot be combined with client-id.
+	{Key: "github",
+		Para: []string{
+			"Or: a short-lived GitHub App installation token for the repo in 'origin', renewed",
+			"while 'sbx run' lasts. The app's private key is read from Bitwarden on the host",
+			"('bw'); only the token reaches the sandbox.",
 		},
 		Lines: []string{
 			"github:",

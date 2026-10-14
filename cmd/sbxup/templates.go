@@ -303,8 +303,13 @@ func sourceCacheDir(ref releaseRef) (string, error) {
 // writeCache stores data at path via a temp file in the same directory, so an interrupted
 // write cannot leave a truncated Dockerfile that a later run would happily build.
 func writeCache(path string, data []byte) error {
+	return writeAtomic(path, data, 0o644, 0o755)
+}
+
+// writeAtomic is writeCache with the file and directory modes given, for files that hold secrets.
+func writeAtomic(path string, data []byte, mode, dirMode os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, ".sbxup-*")
@@ -321,7 +326,7 @@ func writeCache(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmpName, 0o644); err != nil {
+	if err := os.Chmod(tmpName, mode); err != nil {
 		return err
 	}
 	return os.Rename(tmpName, path)

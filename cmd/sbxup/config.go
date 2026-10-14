@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -64,9 +65,12 @@ type Config struct {
 	GitHub *GitHubConfig
 }
 
-// GitHubConfig is the `github:` block. It names where the app's private key is kept, never the key
-// itself; the token is minted on the host and only the token reaches the sandbox.
+// GitHubConfig is the `github:` block, in one of two modes. With ClientID, sbxup uses the user's
+// login from `sbxup --gh-login` (a user access token, see userauth.go). With BitwardenItem, it names
+// where the app's private key is kept, never the key itself, and mints an installation token. Either
+// way the token is made on the host and only the token reaches the sandbox.
 type GitHubConfig struct {
+	ClientID      string // user-token mode: the app's client ID, public
 	BitwardenItem string // name or id of the Bitwarden item holding the app
 	KeyAttachment string // the item's private-key attachment; empty takes its only *.pem
 	ClientIDField string // the item's field with the client ID, the JWT issuer
@@ -217,11 +221,18 @@ func parseGitHub(val any, path string) (*GitHubConfig, error) {
 	}
 	m, ok := val.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'github' in %s must be a block with at least 'bitwarden-item'", path)
+		return nil, fmt.Errorf("'github' in %s must be a block with 'client-id' or 'bitwarden-item'", path)
 	}
 	g := &GitHubConfig{ClientIDField: "client-id", AppIDField: "app-id"}
+	var appKeys []string // keys that only the Bitwarden mode reads
 	for key, v := range m {
-		switch strings.ToLower(key) {
+		k := strings.ToLower(key)
+		if k != "client-id" && k != "bitwarden-item" {
+			appKeys = append(appKeys, k)
+		}
+		switch k {
+		case "client-id":
+			g.ClientID = scalarString(v)
 		case "bitwarden-item":
 			g.BitwardenItem = scalarString(v)
 		case "key-attachment":
@@ -256,12 +267,29 @@ func parseGitHub(val any, path string) (*GitHubConfig, error) {
 				g.Permissions[name] = l
 			}
 		default:
-			return nil, fmt.Errorf("unknown key 'github.%s' in %s (expected: bitwarden-item, key-attachment, "+
-				"client-id-field, app-id-field, repositories, permissions)", key, path)
+			return nil, fmt.Errorf("unknown key 'github.%s' in %s (expected: client-id, or bitwarden-item with "+
+				"key-attachment, client-id-field, app-id-field, repositories, permissions)", key, path)
 		}
 	}
-	if g.BitwardenItem == "" {
-		return nil, fmt.Errorf("'github' in %s needs 'bitwarden-item': the Bitwarden item holding the GitHub App's key", path)
+	switch {
+	case g.ClientID != "" && g.BitwardenItem != "":
+		return nil, fmt.Errorf("'github' in %s has both 'client-id' and 'bitwarden-item'; use one: "+
+			"'client-id' for your own login (sbxup --gh-login), 'bitwarden-item' for an app installation token", path)
+	case g.ClientID != "":
+		if !clientIDPattern.MatchString(g.ClientID) {
+			return nil, fmt.Errorf("'github.client-id' in %s is %q, which is not a GitHub App client ID", path, g.ClientID)
+		}
+		if len(appKeys) > 0 {
+			sort.Strings(appKeys)
+			return nil, fmt.Errorf("'github.%s' in %s applies only with 'bitwarden-item': a token from 'client-id' "+
+				"acts as you with the app's permissions and cannot be narrowed (use a second app with fewer permissions)",
+				appKeys[0], path)
+		}
+		g.ClientIDField, g.AppIDField = "", ""
+		return g, nil
+	case g.BitwardenItem == "":
+		return nil, fmt.Errorf("'github' in %s needs 'client-id' (your login, sbxup --gh-login) or 'bitwarden-item' "+
+			"(the Bitwarden item holding the GitHub App's key)", path)
 	}
 	if len(g.Permissions) == 0 {
 		g.Permissions = defaultGitHubPermissions

@@ -73,11 +73,11 @@ func TestParseArgs(t *testing.T) {
 	})
 
 	t.Run("github token flags", func(t *testing.T) {
-		o, err := parseArgs([]string{"--GH-TOKEN", "--no-gh-token"})
+		o, err := parseArgs([]string{"--GH-TOKEN", "--no-gh-token", "--gh-login", "--gh-logout"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !o.ghToken || !o.noGHToken || len(o.extra) != 0 {
+		if !o.ghToken || !o.noGHToken || !o.ghLogin || !o.ghLogout || len(o.extra) != 0 {
 			t.Fatalf("unexpected options: %+v", o)
 		}
 	})

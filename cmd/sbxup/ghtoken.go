@@ -1,13 +1,17 @@
 package main
 
-// Short-lived GitHub tokens for the sandbox (`github:` in the config). sbxup reads the GitHub App's
-// key from Bitwarden, mints an installation token for the repository in `origin` (plus the config's
-// `repositories`), hands it to the sandbox with `sbx secret set github`, mints a fresh one before the
-// hour is up for as long as `sbx run` lasts, and revokes the last one when the session ends.
+// Short-lived GitHub tokens for the sandbox (`github:` in the config), in two modes:
+//   - `client-id`: the user's own login from `sbxup --gh-login` (userauth.go). One token, shared by
+//     every sandbox of that app and refreshed through a file; it is never revoked on exit, because
+//     another sandbox may be using it.
+//   - `bitwarden-item`: sbxup reads the GitHub App's key from Bitwarden, mints an installation token
+//     for the repository in `origin` (plus the config's `repositories`), mints a fresh one before the
+//     hour is up for as long as `sbx run` lasts, and revokes the last one when the session ends.
+// Either way the token reaches the sandbox with `sbx secret set github`.
 //
 // Every failure is a warning: the sandbox starts without a token rather than not at all. The config
-// comes from the repository, so the first use of a given item, set of repositories and permissions
-// is approved once by the user, and the approval is kept in the user cache, never in the repo.
+// comes from the repository, so the first use of a given app, item, set of repositories and
+// permissions is approved once by the user, and the approval is kept in the user cache, never in the repo.
 
 import (
 	"context"
@@ -35,6 +39,10 @@ const (
 	// sandboxWait bounds the wait for a new sandbox to show up in `sbx list`.
 	sandboxWait = 2 * time.Minute
 )
+
+// userPollEvery is how often a session with a shared user token looks at the login file, so a token
+// refreshed by another sbxup reaches this sandbox too. A variable for tests.
+var userPollEvery = time.Minute
 
 var (
 	// gitOriginURL returns `git remote get-url origin` for dir. A variable so tests need no repo.
@@ -174,9 +182,49 @@ func recordGHApproval(key, project, item, owner string, repos []string, perms ma
 	return writeCache(path, data)
 }
 
-// ghSession holds what is needed to mint again: the key stays in memory for the session.
+// userApprovalKey is ghApprovalKey for the user-token mode: the project and the app, so a repository
+// that switches to an app with wider permissions is asked about again.
+func userApprovalKey(project, clientID string) string {
+	return ghApprovalKey(project, "client-id:"+clientID, "", nil, nil)
+}
+
+func recordUserApproval(key, project, clientID string) error {
+	path, err := ghApprovalPath(key)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(map[string]any{"project": project, "clientId": clientID, "approvedAt": now()})
+	if err != nil {
+		return err
+	}
+	return writeCache(path, data)
+}
+
+// approveGitHub asks once per key; record keeps a "yes". It reports whether to go on.
+func approveGitHub(key string, record func() error) bool {
+	if ghApproved(key) {
+		return true
+	}
+	if !isInteractive() {
+		warnf("GitHub token: this project's request has not been approved and there is no terminal to ask on; starting without one.")
+		return false
+	}
+	yes, answered := askGitHub("  Allow this project to use it? [y/N] ")
+	if !answered || !yes {
+		fmt.Println("GitHub token: skipped; you will be asked again next time.")
+		return false
+	}
+	if err := record(); err != nil {
+		warnf("cannot remember the approval (%v); you will be asked again next time.", err)
+	}
+	return true
+}
+
+// ghSession holds what is needed to renew the token. In the Bitwarden mode the key stays in memory
+// for the session; in the user-token mode (clientID set) the login file is the source.
 type ghSession struct {
 	client       *http.Client
+	clientID     string
 	key          *rsa.PrivateKey
 	issuer       string
 	owner        string
@@ -185,6 +233,21 @@ type ghSession struct {
 	perms        map[string]string
 	token        string
 	expires      time.Time
+	sent         string // the token last given to the sandbox
+}
+
+// renew brings the token up to date: a new installation token, or the shared user token (which
+// another sbxup may already have refreshed).
+func (s *ghSession) renew() error {
+	if s.clientID == "" {
+		return s.mint()
+	}
+	t, err := currentUserToken(s.client, s.clientID)
+	if err != nil {
+		return err
+	}
+	s.token, s.expires = t.AccessToken, t.AccessExpiresAt
+	return nil
 }
 
 func (s *ghSession) mint() error {
@@ -205,9 +268,10 @@ func (s *ghSession) mint() error {
 	return nil
 }
 
-// revoke ends the last token, so a sandbox left running keeps no valid one.
+// revoke ends the last token, so a sandbox left running keeps no valid one. A user token is left
+// alone: other sandboxes share it, and ending it needs the app's secret.
 func (s *ghSession) revoke() {
-	if s == nil || s.token == "" {
+	if s == nil || s.token == "" || s.clientID != "" {
 		return
 	}
 	if err := revokeToken(s.client, s.token); err != nil {
@@ -218,12 +282,49 @@ func (s *ghSession) revoke() {
 	fmt.Println("GitHub token: revoked")
 }
 
-// prepareGitHubToken mints the first token, or returns nil when there is none to give: no `github:`
-// block, --no-gh-token, --dry-run, a "no", an empty password or any failure (a warning).
+// prepareGitHubToken gets the first token, or returns nil when there is none to give: no `github:`
+// block, --no-gh-token, --dry-run, a "no", an empty password, no login or any failure (a warning).
 func prepareGitHubToken(g *GitHubConfig, project string, disabled, dryRun bool) *ghSession {
 	if g == nil || disabled {
 		return nil
 	}
+	if g.ClientID != "" {
+		return prepareUserToken(g, project, dryRun)
+	}
+	return prepareAppToken(g, project, dryRun)
+}
+
+// prepareUserToken takes the shared token of the user's login for the app, refreshing it if due.
+func prepareUserToken(g *GitHubConfig, project string, dryRun bool) *ghSession {
+	fmt.Printf("GitHub token: your login via app %s (every organization where it is installed)\n", g.ClientID)
+	if dryRun {
+		fmt.Println("[dry-run] would use the login from 'sbxup --gh-login' (refreshed if due) and set it with 'sbx secret set github'.")
+		return nil
+	}
+	key := userApprovalKey(project, g.ClientID)
+	if !approveGitHub(key, func() error { return recordUserApproval(key, project, g.ClientID) }) {
+		return nil
+	}
+	client := &http.Client{Timeout: httpClient}
+	t, err := currentUserToken(client, g.ClientID)
+	if err != nil {
+		warnf("GitHub token: %v; starting without one.", err)
+		return nil
+	}
+	who := ""
+	if t.Login != "" {
+		who = " for " + t.Login
+	}
+	expires := "does not expire"
+	if !t.AccessExpiresAt.IsZero() {
+		expires = "expires " + t.AccessExpiresAt.Local().Format("15:04")
+	}
+	fmt.Printf("GitHub token: ready%s (%s)\n", who, expires)
+	return &ghSession{client: client, clientID: g.ClientID, token: t.AccessToken, expires: t.AccessExpiresAt}
+}
+
+// prepareAppToken mints an installation token with the app's key from Bitwarden.
+func prepareAppToken(g *GitHubConfig, project string, dryRun bool) *ghSession {
 	remote, err := gitOriginURL(project)
 	if err != nil {
 		warnf("GitHub token: %v; starting without one.", err)
@@ -252,19 +353,10 @@ func prepareGitHubToken(g *GitHubConfig, project string, disabled, dryRun bool) 
 	}
 
 	key := ghApprovalKey(project, g.BitwardenItem, owner, repos, g.Permissions)
-	if !ghApproved(key) {
-		if !isInteractive() {
-			warnf("GitHub token: this project's request has not been approved and there is no terminal to ask on; starting without one.")
-			return nil
-		}
-		yes, answered := askGitHub("  Allow this project to use it? [y/N] ")
-		if !answered || !yes {
-			fmt.Println("GitHub token: skipped; you will be asked again next time.")
-			return nil
-		}
-		if err := recordGHApproval(key, project, g.BitwardenItem, owner, repos, g.Permissions); err != nil {
-			warnf("cannot remember the approval (%v); you will be asked again next time.", err)
-		}
+	if !approveGitHub(key, func() error {
+		return recordGHApproval(key, project, g.BitwardenItem, owner, repos, g.Permissions)
+	}) {
+		return nil
 	}
 
 	vault, err := openVault()
@@ -302,9 +394,13 @@ func prepareGitHubToken(g *GitHubConfig, project string, disabled, dryRun bool) 
 
 // keepFresh gives the token to the sandbox and replaces it before it expires, until ctx ends.
 // For a new sandbox (name == "") it first waits for candidate to appear in `sbx list`, since sbx
-// names it only once `sbx run` has started.
+// names it only once `sbx run` has started; a resumed one got the token from run() already.
+// A user token is shared, so that session looks at the login file every userPollEvery and passes on
+// a token that another sbxup refreshed.
 func (s *ghSession) keepFresh(ctx context.Context, name, candidate string) {
-	if name == "" {
+	if name != "" {
+		s.sent = s.token
+	} else {
 		deadline := now().Add(sandboxWait)
 		for name == "" {
 			if name = resolveSandboxName(candidate); name != "" {
@@ -320,27 +416,41 @@ func (s *ghSession) keepFresh(ctx context.Context, name, candidate string) {
 		}
 		if err := sbxSecretSet(name, s.token); err != nil {
 			warnf("GitHub token: %v", err)
+		} else {
+			s.sent = s.token
 		}
 	}
+	lastErr := ""
 	for {
-		wait := s.expires.Sub(now()) - refreshBefore
-		if wait < retryAfter {
-			wait = retryAfter
+		wait := userPollEvery
+		if s.clientID == "" {
+			if wait = s.expires.Sub(now()) - refreshBefore; wait < retryAfter {
+				wait = retryAfter
+			}
 		}
 		if !sleepCtx(ctx, wait) {
 			return
 		}
 		old := s.token
-		err := s.mint()
-		if err == nil {
-			err = sbxSecretSet(name, s.token)
+		err := s.renew()
+		if err == nil && s.token != s.sent {
+			if err = sbxSecretSet(name, s.token); err == nil {
+				s.sent = s.token
+			}
 		}
 		if err != nil {
-			warnf("GitHub token: refresh failed (%v); retrying in a minute.", err)
-			s.expires = now().Add(refreshBefore + retryAfter)
+			if s.clientID == "" {
+				warnf("GitHub token: refresh failed (%v); retrying in a minute.", err)
+				s.expires = now().Add(refreshBefore + retryAfter)
+			} else if msg := err.Error(); msg != lastErr {
+				// Checked every minute, so the same failure is reported once.
+				warnf("GitHub token: %v", err)
+				lastErr = msg
+			}
 			continue
 		}
-		if old != "" && old != s.token {
+		lastErr = ""
+		if s.clientID == "" && old != "" && old != s.token {
 			_ = revokeToken(s.client, old)
 		}
 	}
@@ -350,7 +460,7 @@ func (s *ghSession) keepFresh(ctx context.Context, name, candidate string) {
 // e.g. from a second terminal. It is not refreshed or revoked; it simply expires.
 func ghTokenCmd(g *GitHubConfig, project, candidate string, dryRun bool) error {
 	if g == nil {
-		return errors.New("--gh-token needs a 'github:' block with 'bitwarden-item' in the config")
+		return errors.New("--gh-token needs a 'github:' block with 'client-id' or 'bitwarden-item' in the config")
 	}
 	target := resolveSandboxName(candidate)
 	if target == "" && !dryRun {

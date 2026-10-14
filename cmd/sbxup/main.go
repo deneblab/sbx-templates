@@ -26,6 +26,8 @@ Usage:
   sbxup --no-skills        Skip the skills import and its question this time
   sbxup --no-gh-token      Start without a GitHub token this time (config 'github:')
   sbxup --gh-token         Mint a GitHub token and set it in the running sandbox
+  sbxup --gh-login         Log in to the GitHub App in 'github: client-id' (once per machine)
+  sbxup --gh-logout        Forget that login on this machine
   sbxup --exec             Open a shell in the existing sandbox
   sbxup --status           List sandboxes for the current project
   sbxup --stop             Stop the sandbox for the current project
@@ -54,8 +56,11 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   mounts:              # optional: extra host directories; ':ro' for read-only
     - ~/shared-libs:ro
     - ../docs
-  github:              # optional: short-lived GitHub App token for the repo in 'origin'
-    bitwarden-item: github-deneblab-agent   # holds the app's client-id field and .pem key
+  github:              # optional: a GitHub token for the sandbox, in one of two modes
+    client-id: Iv23liAbc123                 # your login via this app (sbxup --gh-login); nothing else
+  # or
+  github:
+    bitwarden-item: github-deneblab-agent   # app installation token; holds the client-id field and .pem key
     key-attachment: app.private-key.pem     # optional (default: the item's only .pem attachment)
     client-id-field: client-id              # optional (default: client-id)
     app-id-field: app-id                    # optional: used when the client-id field is missing
@@ -70,9 +75,12 @@ before building the new one. Without a terminal it does not ask; --update builds
 Skills: a new sandbox gets 'sbx skills import --force' (your agents' skills, into the store shared by all
 sandboxes). On a resume sbxup asks, and only when the skills on the host changed since the last import.
 
-GitHub token: with 'github:' set, sbxup reads the app's key from Bitwarden ('bw'; asks for the master
-password unless BW_SESSION is set, Enter skips), sets a one-hour token with 'sbx secret set github',
-renews it while 'sbx run' lasts and revokes it on exit. The first use per project is approved once.
+GitHub token: with 'client-id', sbxup uses your login from 'sbxup --gh-login' (no password, no key):
+an eight-hour token acting as you, limited to the app's permissions, in every organization where the
+app is installed. All sandboxes of the app share it; sbxup refreshes it and does not revoke it on exit.
+With 'bitwarden-item', sbxup reads the app's key from Bitwarden ('bw'; asks for the master password
+unless BW_SESSION is set, Enter skips), sets a one-hour token with 'sbx secret set github', renews it
+while 'sbx run' lasts and revokes it on exit. The first use per project is approved once.
 
 Mounts are checked before anything is built: the home directory and credential directories
 (~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
@@ -88,6 +96,8 @@ type options struct {
 	noClone      bool
 	noSkills     bool
 	ghToken      bool
+	ghLogin      bool
+	ghLogout     bool
 	noGHToken    bool
 	exec         bool
 	status       bool
@@ -144,6 +154,10 @@ func parseArgs(argv []string) (*options, error) {
 			o.noSkills = true
 		case "--gh-token":
 			o.ghToken = true
+		case "--gh-login":
+			o.ghLogin = true
+		case "--gh-logout":
+			o.ghLogout = true
 		case "--no-gh-token":
 			o.noGHToken = true
 		case "--exec":
@@ -259,6 +273,10 @@ func run(argv []string) error {
 		return execCmd(candidate, o.dryRun)
 	case o.ghToken:
 		return ghTokenCmd(cfg.GitHub, cwd, candidate, o.dryRun)
+	case o.ghLogin:
+		return ghLoginCmd(cfg.GitHub, o.dryRun)
+	case o.ghLogout:
+		return ghLogoutCmd(cfg.GitHub, o.dryRun)
 	}
 
 	// The template is a name from the release, built locally on first use. The built tag is

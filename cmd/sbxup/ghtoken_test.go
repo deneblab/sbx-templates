@@ -195,16 +195,26 @@ github:
 		t.Fatalf("parsed %+v", g)
 	}
 
+	write(t, path, "template: dotnet10\ngithub:\n  client-id: Iv23liAbc123\n")
+	if cfg, err := loadConfig(path); err != nil || cfg.GitHub.ClientID != "Iv23liAbc123" ||
+		cfg.GitHub.BitwardenItem != "" || cfg.GitHub.ClientIDField != "" || cfg.GitHub.Permissions != nil {
+		t.Fatalf("client-id mode: %+v, %v", cfg.GitHub, err)
+	}
+
 	write(t, path, "template: dotnet10\ngithub:\n  bitwarden-item: x\n")
 	if cfg, _ := loadConfig(path); formatPermissions(cfg.GitHub.Permissions) != "contents:write, issues:write, pull_requests:write" {
 		t.Fatalf("default permissions: %v", cfg.GitHub.Permissions)
 	}
 
 	bad := map[string]string{
-		"github:\n  repositories: [docs]\n":                                "needs 'bitwarden-item'",
+		"github:\n  repositories: [docs]\n":                                "needs 'client-id'",
 		"github:\n  bitwarden-item: x\n  permisions: {contents: write}\n":  "unknown key 'github.permisions'",
 		"github:\n  bitwarden-item: x\n  permissions: {contents: admin}\n": "use read or write",
 		"github: yes\n": "must be a block",
+		"github:\n  client-id: Iv23li\n  bitwarden-item: x\n":            "both 'client-id' and 'bitwarden-item'",
+		"github:\n  client-id: Iv23li\n  repositories: [docs]\n":         "'github.repositories' in",
+		"github:\n  client-id: Iv23li\n  permissions: {issues: write}\n": "cannot be narrowed",
+		"github:\n  client-id: ../x\n":                                   "not a GitHub App client ID",
 	}
 	for body, want := range bad {
 		write(t, path, "template: dotnet10\n"+body)

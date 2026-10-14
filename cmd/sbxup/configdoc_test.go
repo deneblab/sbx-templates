@@ -65,11 +65,17 @@ func TestConfigDocsCoverEveryKey(t *testing.T) {
 		}
 	}
 
-	gh := docFor("github")
-	if gh == nil {
+	// The github key has one entry per mode; together they must show every field.
+	var lines []string
+	for _, d := range configDocs {
+		if d.Key == "github" {
+			lines = append(lines, d.Lines...)
+		}
+	}
+	if len(lines) == 0 {
 		t.Fatal("no github doc")
 	}
-	body := strings.Join(gh.Lines, "\n")
+	body := strings.Join(lines, "\n")
 	gt := reflect.TypeOf(GitHubConfig{})
 	for i := 0; i < gt.NumField(); i++ {
 		key := kebab(gt.Field(i).Name)

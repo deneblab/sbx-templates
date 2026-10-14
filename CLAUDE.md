@@ -197,16 +197,18 @@ purpose: a repository config must not decide what is copied from the user's home
 
 ### GitHub App tokens (`ghtoken.go`, `githubapp.go`, `bitwarden.go`)
 
-A `github:` block makes sbxup mint a one-hour GitHub App installation token and hand it to the sandbox
-with `sbx secret set github --sandbox <name>`, which takes effect in a running sandbox. Things worth
+A `github:` block with `bitwarden-item` makes sbxup mint a one-hour GitHub App installation token and hand
+it to the sandbox with `sbx secret set github --sandbox <name>`, which takes effect in a running sandbox.
+(With `client-id` instead, the token comes from the user's own login; see the next section.) Things worth
 keeping in mind:
 
 - **The key never enters the sandbox.** `bw` reads the item's `client-id` field and `.pem` attachment on
   the host, the key stays in sbxup's memory for the session, and only the token is set. There is no key or
   token cache on purpose: a cached key would be a second copy of the secret outside Bitwarden.
 - **The password reaches `bw` only through a child's environment** (`bw unlock --passwordenv`), never as an
-  argument, and is read with echo off (`golang.org/x/term`, the only dependency besides `yaml.v3`). An empty
-  password is a deliberate skip (`errNoToken`), not a failure. With `BW_SESSION` set nothing is asked.
+  argument, and is read with echo off (`golang.org/x/term`; the dependencies are it, `golang.org/x/sys` for
+  `lockFile`, and `yaml.v3`). An empty password is a deliberate skip (`errNoToken`), not a failure. With
+  `BW_SESSION` set nothing is asked.
   When sbxup unlocked the vault it runs `bw lock` after reading. Every `bw` call gets `--nointeraction`.
 - **The config comes from the repository, so the request is approved once**, as with `mounts:`. The key in
   `sbxup/github/<key>.json` covers project, item, owner, repositories and permissions, so naming another
@@ -238,6 +240,37 @@ keeping in mind:
   `bw` sees fields added in the app only after `bw sync`. `sbx secret set` also works for a sandbox that
   does not exist yet; the poll in `keepFresh` was kept anyway (a deliberate choice: the token arrives
   within seconds, and the poll does not depend on guessing the name sbx will pick).
+
+### Your own login: `github: client-id` (`userauth.go`)
+
+The second mode of the `github:` block. `sbxup --gh-login` runs GitHub's device flow once per machine
+(a code to enter on github.com); every start then costs one refresh call, with no Bitwarden, no password
+and no private key on the host. It exists because the Bitwarden mode asked for the master password on
+every start and ran `bw` five times. Things worth keeping in mind:
+
+- **The two modes exclude each other.** `client-id` with `bitwarden-item` is an error, and so is
+  `client-id` with any key only the Bitwarden mode reads (`repositories`, `permissions`, ...).
+- **No client secret, anywhere.** GitHub requires none for the device flow, nor to refresh a token the
+  device flow issued (checked in GitHub's docs, 2026-10-14). The config holds only the public client ID.
+- **The token acts as the user**, limited to the app's permissions and the user's own rights, in every
+  organization where the app is installed; the one-owner rule of the Bitwarden mode does not apply. It
+  cannot be narrowed to repositories, so different permission sets mean different apps (a repository
+  switching apps is a new approval, keyed by `client-id`). With `contents: read` the agent cannot push a
+  branch, so it cannot open a PR from its own work; `.github/workflows/` needs the `workflows` permission.
+- **One token, shared by every sandbox of the app.** A refresh ends the old access token too, so a start
+  reuses the stored token while it has more than `refreshBefore` left, refreshes only under `lockFile`
+  (flock / LockFileEx; the OS drops it when a process dies) and re-reads the file after taking the lock.
+  `keepFresh` looks at the file every `userPollEvery` and sets a token another sbxup refreshed.
+- **Never revoked on exit**: other sandboxes may be using it, and the revoke API is for the app owner.
+  `--gh-logout` deletes the local file and points to github.com/settings/apps/authorizations.
+- **The login is a file**, `os.UserConfigDir()/sbxup/github-auth/<client-id>.json`, mode `0600` (as Claude
+  Code and `gh` without a keyring), in the config directory so clearing caches does not log the user out.
+  The client ID becomes the file name, so `clientIDPattern` validates it. Access tokens last 8 h, refresh
+  tokens 6 months; a dead login is a warning naming `--gh-login`, and the sandbox starts without a token.
+- **Seams:** `githubLoginBase` (github.com OAuth endpoints), `userPollEvery`, plus the existing
+  `githubAPIBase`, `sleepCtx` and `sbxSecretSet`.
+- **Not yet verified on a host**: a real app with device flow enabled, two sandboxes at once, `gh api` and
+  `git push` with a `ghu_` token through the sbx proxy.
 
 ## Local Templates Without Docker Hub
 
