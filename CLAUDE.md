@@ -366,9 +366,12 @@ SBXT-011, GitHub #2. Things worth keeping in mind:
 - **Seams:** `sbxStart`, `sbxMount`, `sbxUmount`, `dropSudo`, `sbxExecStdin`, `sbxFindmnt`, `sbxListDir`;
   `TestMain` makes the first four fail, the last two go through `sbxOutput`. The test fake reproduces the
   host's mount table (workspace, then `/mnt/host` after the first mount).
-- **Verified on a Windows host** (2026-10-14, `antipiracy.RobeNova.claude`): the workspace cover, ro, no sudo,
-  notice, host `dev` intact; then the `/mnt/host` leak, which `coverEverywhere` addresses. **Not yet verified:**
-  `coverEverywhere` itself (that `sbx mount` accepts a target under `/mnt/host`), Linux and macOS.
+- **Verified on a Windows host** (2026-10-14, sbxup 0.2.22, a new sandbox with real data in `dev`): two covers,
+  `/w/…/dev` and `/mnt/host/w/…/dev`, both ro, `HIDDEN.txt` on both; `touch` → read-only, `umount` → must be
+  superuser, `sudo -n true` → password required, git works, the host's `dev` untouched. Case variants (`DEV`,
+  `robenova` under `/mnt/host`) land on the cover. Both covers come back after `sbx stop` + start. On a resume,
+  adding an entry made two more covers, and removing it took away exactly those two and their directories while
+  the `dev` covers kept working. **Not yet verified:** Linux and macOS hosts.
 
 ## Local Templates Without Docker Hub
 
