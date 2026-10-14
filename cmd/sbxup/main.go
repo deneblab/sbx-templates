@@ -255,7 +255,7 @@ func run(argv []string) error {
 
 	// --- Sandbox name ---------------------------------------------------------
 	// The candidate is what `sbx` most likely called the sandbox: agent + folder, verbatim.
-	// Every command that takes a name resolves it through `sbx list` first and falls back to
+	// Every command that takes a name resolves it through `sbx ls` first and falls back to
 	// the candidate only when no sandbox exists yet.
 	cwd, err := os.Getwd()
 	if err != nil {

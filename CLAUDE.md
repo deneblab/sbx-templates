@@ -387,6 +387,23 @@ rebuild that cannot succeed. Docker is required only to build or update a templa
 (`--rebuild`, `--update-claude`, or a first run); `dockerAvailable()` is checked before building so
 the user gets an actionable message instead of a raw npipe/socket error.
 
+### Reading `sbx` output (sbx 0.48+)
+
+sbx 0.48 changed the human-readable output of every command (headings, status marks such as
+`● running`, a `CREATED` column) and moved errors, warnings and hints to stderr. sbxup therefore:
+
+- **Reads stdout only**, through `sbxOutput` (a seam; `TestMain` makes it fail so no test runs a real
+  `sbx`). The interactive `runSbx` and the commands whose output is only shown on failure
+  (`sbx skills import`, `sbx secret set`) are unchanged.
+- **Asks for JSON first and keeps the table as the fallback** for an sbx without `--json`.
+  `sbx ls --json` is documented (`.[].name`; before 0.48 `.sandboxes[].name`), so `sbxNames` reads both
+  shapes. `sbx list` is tried only when `sbx ls` fails.
+- **`sbx template ls --json` has undocumented fields.** `templateRefsJSON` accepts the array (0.48) or
+  `{"images": [...]}` and, per image, repository + tag, a `name:tag` reference or a list of them, in any
+  casing. An image list in which none is found is an error, not "nothing built": sbxup warns once and
+  reads the table, because "nothing built" would rebuild the template on every start. When the real
+  field names are known from a host, pin them here and narrow the parser.
+
 ## Local Docker Build (Taskfile)
 
 Requires [Task](https://taskfile.dev). Dispatches to `.sh` (Linux/macOS) or `.ps1` (Windows) automatically.

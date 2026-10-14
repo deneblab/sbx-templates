@@ -1,12 +1,21 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
 )
+
+// sbxOutput runs `sbx` and returns its stdout only. Since sbx 0.48 results go to stdout and errors,
+// warnings and hints to stderr, so stderr must not be parsed along with the result. A variable so
+// tests never run a real `sbx` (TestMain makes it fail unless a test stubs it).
+var sbxOutput = func(args ...string) ([]byte, error) {
+	return exec.Command("sbx", args...).Output()
+}
 
 // foldName produces a comparison key ONLY — never pass it to `sbx`. It lowercases and drops
 // every non-alphanumeric character so a name compares equal whatever casing and separators
@@ -22,29 +31,75 @@ func foldName(name string) string {
 	return b.String()
 }
 
-// sbxList returns the raw lines of `sbx list`. Errors are swallowed: an unavailable or
-// failing `sbx` simply means "no sandboxes known", which callers handle.
+// sbxList returns the lines of the `sbx ls` table, for showing to the user (--status) and as the
+// fallback when `sbx ls --json` cannot be read. `sbx list` is tried when `ls` fails, for an sbx
+// that predates it. Errors are swallowed: an unavailable or failing `sbx` simply means "no
+// sandboxes known", which callers handle.
 var sbxList = func() []string {
-	out, err := exec.Command("sbx", "list").CombinedOutput()
+	out, err := sbxOutput("ls")
 	if err != nil && len(out) == 0 {
-		return nil
+		if out, err = sbxOutput("list"); err != nil && len(out) == 0 {
+			return nil
+		}
 	}
 	return strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
 }
 
-// resolveSandboxName asks `sbx list` for the real name of a sandbox.
+// sbxNames returns the names of the local sandboxes. It reads `sbx ls --json`, whose shape is
+// documented (sbx 0.48: an array of objects with `name`; earlier `{"sandboxes": [...]}`), rather
+// than the table, whose headings and status marks change between releases. Without usable JSON
+// every word of the table counts as a candidate, which is what sbxup always did.
+var sbxNames = func() []string {
+	if out, err := sbxOutput("ls", "--json"); err == nil {
+		if names, err := sandboxNamesJSON(out); err == nil {
+			return names
+		}
+	}
+	var words []string
+	for _, line := range sbxList() {
+		words = append(words, strings.Fields(line)...)
+	}
+	return words
+}
+
+// sandboxNamesJSON reads either shape of `sbx ls --json`.
+func sandboxNamesJSON(data []byte) ([]string, error) {
+	type row struct {
+		Name string `json:"name"`
+	}
+	var rows []row
+	if err := json.Unmarshal(data, &rows); err != nil {
+		var wrapped struct {
+			Sandboxes *[]row `json:"sandboxes"`
+		}
+		if json.Unmarshal(data, &wrapped) != nil || wrapped.Sandboxes == nil {
+			return nil, errors.New("not a list of sandboxes")
+		}
+		rows = *wrapped.Sandboxes
+	}
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Name != "" {
+			names = append(names, r.Name)
+		}
+	}
+	if len(names) == 0 && len(rows) > 0 {
+		return nil, errors.New("sandboxes without names")
+	}
+	return names, nil
+}
+
+// resolveSandboxName asks `sbx ls` for the real name of a sandbox.
 //
 // `sbx` derives the sandbox name from the folder itself and its exact rule is undocumented —
 // it does preserve case (folder "AbcVersion" -> sandbox "claude-AbcVersion"), so mirroring it
 // here is guesswork that produces names `sbx run --name` / `sbx stop` cannot resolve. Ask
-// `sbx list` instead and return the name exactly as it reports it. Returns "" when nothing matches.
+// `sbx ls` instead and return the name exactly as it reports it. Returns "" when nothing matches.
 func resolveSandboxName(candidate string) string {
 	key := foldName(candidate)
-	for _, line := range sbxList() {
-		for _, token := range strings.Fields(line) {
-			if token != "" && foldName(token) == key {
-				return token
-			}
+	for _, name := range sbxNames() {
+		if name != "" && foldName(name) == key {
+			return name
 		}
 	}
 	return ""

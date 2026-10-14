@@ -36,7 +36,7 @@ const (
 	// GitHub's one-hour tokens.
 	refreshBefore = 15 * time.Minute
 	retryAfter    = time.Minute
-	// sandboxWait bounds the wait for a new sandbox to show up in `sbx list`.
+	// sandboxWait bounds the wait for a new sandbox to show up in `sbx ls`.
 	sandboxWait = 2 * time.Minute
 )
 
@@ -393,7 +393,7 @@ func prepareAppToken(g *GitHubConfig, project string, dryRun bool) *ghSession {
 }
 
 // keepFresh gives the token to the sandbox and replaces it before it expires, until ctx ends.
-// For a new sandbox (name == "") it first waits for candidate to appear in `sbx list`, since sbx
+// For a new sandbox (name == "") it first waits for candidate to appear in `sbx ls`, since sbx
 // names it only once `sbx run` has started; a resumed one got the token from run() already.
 // A user token is shared, so that session looks at the login file every userPollEvery and passes on
 // a token that another sbxup refreshed.
@@ -407,7 +407,7 @@ func (s *ghSession) keepFresh(ctx context.Context, name, candidate string) {
 				break
 			}
 			if now().After(deadline) {
-				warnf("GitHub token: sandbox %s did not appear in 'sbx list'; it has no token. Run 'sbxup --gh-token' to set one.", candidate)
+				warnf("GitHub token: sandbox %s did not appear in 'sbx ls'; it has no token. Run 'sbxup --gh-token' to set one.", candidate)
 				return
 			}
 			if !sleepCtx(ctx, pollEvery) {

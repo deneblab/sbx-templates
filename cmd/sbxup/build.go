@@ -5,6 +5,8 @@ package main
 // built here and one built from a clone carry the same OCI labels.
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -90,41 +92,126 @@ func canonicalRef(repo, tag string) string {
 	return repo + ":" + tag
 }
 
-// templateListedIn reports whether `sbx template ls` output contains tag. Split out from the
-// exec wrapper so the table parsing is testable — and because a substring match over the raw
-// output silently never matches: REPOSITORY and TAG are separate columns, so the `name:tag`
-// form we look for never appears in the text.
+// templateListedIn reports whether `sbx template ls` table output contains tag. A substring match
+// over the raw output silently never matches: REPOSITORY and TAG are separate columns, so the
+// `name:tag` form we look for never appears in the text.
 func templateListedIn(out, tag string) bool {
 	want := canonicalRef(tag, "")
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[0] == "REPOSITORY" {
-			continue
-		}
-		if canonicalRef(fields[0], fields[1]) == want {
+	for _, r := range templateTableRefs(out) {
+		if r == want {
 			return true
 		}
 	}
 	return false
 }
 
-// templateTagsIn returns the tags `sbx template ls` lists for one repository, in listing order.
-// Repositories are compared in canonical form, so `docker.io/library/sbx-claude-dotnet10` matches
-// the bare name the local tag uses — while `docker.io/pkudrel/sbx-claude-dotnet10`, the frozen
-// Docker Hub image, correctly does not.
+// templateTagsIn returns the tags the `sbx template ls` table lists for one repository, in listing
+// order. Repositories are compared in canonical form, so `docker.io/library/sbx-claude-dotnet10`
+// matches the bare name the local tag uses — while `docker.io/pkudrel/sbx-claude-dotnet10`, the
+// frozen Docker Hub image, correctly does not.
 func templateTagsIn(out, repo string) []string {
-	norm := func(r string) string { return strings.TrimSuffix(canonicalRef(r, "x"), ":x") }
-	want := norm(repo)
-	var tags []string
-	seen := map[string]bool{}
+	return tagsOf(templateTableRefs(out), repo)
+}
+
+// templateRefsJSON reads `sbx template ls --json` into canonical references. The shape is an array
+// since sbx 0.48 and `{"images": [...]}` before; the field names are not documented, so each image
+// is read from whichever of the usual forms it carries: repository + tag, a name:tag reference, or a
+// list of them. An image list in which none of these is found is an error, not "nothing built":
+// that is what turns a format change into a warning instead of a rebuild on every start.
+func templateRefsJSON(data []byte) ([]string, error) {
+	var rows []map[string]any
+	if err := json.Unmarshal(data, &rows); err != nil {
+		var wrapped struct {
+			Images *[]map[string]any `json:"images"`
+		}
+		if json.Unmarshal(data, &wrapped) != nil || wrapped.Images == nil {
+			return nil, errors.New("not a list of images")
+		}
+		rows = *wrapped.Images
+	}
+	var refs []string
+	for _, row := range rows {
+		f := map[string]any{}
+		for k, v := range row {
+			f[strings.ToLower(k)] = v
+		}
+		str := func(keys ...string) string {
+			for _, k := range keys {
+				if v, ok := f[k].(string); ok && v != "" {
+					return v
+				}
+			}
+			return ""
+		}
+		repo, tag := str("repository", "repo"), str("tag")
+		switch {
+		case repo != "" && tag != "":
+			refs = append(refs, canonicalRef(repo, tag))
+		case str("reference", "ref", "image", "name") != "":
+			refs = append(refs, canonicalRef(str("reference", "ref", "image", "name"), ""))
+		default:
+			for _, k := range []string{"tags", "repo_tags", "repotags"} {
+				list, _ := f[k].([]any)
+				for _, item := range list {
+					if r, ok := item.(string); ok && r != "" {
+						refs = append(refs, canonicalRef(r, ""))
+					}
+				}
+			}
+		}
+	}
+	if len(refs) == 0 && len(rows) > 0 {
+		return nil, fmt.Errorf("none of its %d images names a repository and tag", len(rows))
+	}
+	return refs, nil
+}
+
+// templateJSONWarned keeps the format warning to one per run.
+var templateJSONWarned bool
+
+// sbxTemplateRefs lists what the sandbox runtime holds, as canonical references: from
+// `sbx template ls --json` when it can be read, otherwise from the table, which is all an sbx
+// without --json offers. ok is false when sbx gave no answer at all.
+var sbxTemplateRefs = func() (refs []string, ok bool) {
+	if out, err := sbxOutput("template", "ls", "--json"); err == nil {
+		refs, perr := templateRefsJSON(out)
+		if perr == nil {
+			return refs, true
+		}
+		if !templateJSONWarned {
+			templateJSONWarned = true
+			warnf("cannot read 'sbx template ls --json' (%v); reading its table instead. Please report this with the output of 'sbx version'.", perr)
+		}
+	}
+	out, err := sbxOutput("template", "ls")
+	if err != nil && len(out) == 0 {
+		return nil, false
+	}
+	return templateTableRefs(string(out)), true
+}
+
+// templateTableRefs reads the REPOSITORY and TAG columns of the `sbx template ls` table.
+func templateTableRefs(out string) []string {
+	var refs []string
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 || fields[0] == "REPOSITORY" {
 			continue
 		}
-		if norm(fields[0]) == want && !seen[fields[1]] {
-			seen[fields[1]] = true
-			tags = append(tags, fields[1])
+		refs = append(refs, canonicalRef(fields[0], fields[1]))
+	}
+	return refs
+}
+
+// tagsOf returns the tags refs hold for one repository, in listing order and without repeats.
+func tagsOf(refs []string, repo string) []string {
+	want := strings.TrimSuffix(canonicalRef(repo, "x"), ":x") + ":"
+	var tags []string
+	seen := map[string]bool{}
+	for _, r := range refs {
+		if tag, ok := strings.CutPrefix(r, want); ok && !seen[tag] {
+			seen[tag] = true
+			tags = append(tags, tag)
 		}
 	}
 	return tags
@@ -134,11 +221,8 @@ func templateTagsIn(out, repo string) []string {
 // sbxTemplateListed it needs no Docker daemon, which is what lets an update be *offered* without
 // Docker running.
 var sbxTemplateTags = func(repo string) []string {
-	out, err := exec.Command("sbx", "template", "ls").CombinedOutput()
-	if err != nil && len(out) == 0 {
-		return nil
-	}
-	return templateTagsIn(string(out), repo)
+	refs, _ := sbxTemplateRefs()
+	return tagsOf(refs, repo)
 }
 
 // sbxTemplateListed reports whether `sbx` can already see the tag as a template.
@@ -148,11 +232,14 @@ var sbxTemplateTags = func(repo string) []string {
 // authoritative "is it ready to run?" check, and — unlike dockerImageExists — it answers
 // without a Docker daemon. Everything else keys off it.
 var sbxTemplateListed = func(tag string) bool {
-	out, err := exec.Command("sbx", "template", "ls").CombinedOutput()
-	if err != nil && len(out) == 0 {
-		return false
+	refs, _ := sbxTemplateRefs()
+	want := canonicalRef(tag, "")
+	for _, r := range refs {
+		if r == want {
+			return true
+		}
 	}
-	return templateListedIn(string(out), tag)
+	return false
 }
 
 // ensureTemplate makes tag usable as `sbx run --template tag`, importing it only if needed.
