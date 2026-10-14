@@ -183,17 +183,15 @@ func splitRunArgs(extra []string) (create, run []string) {
 // effects so tests can assert the exact command line, which is the cross-platform parity criterion.
 //
 // workspaces are the extra directories to mount (the cache, then the config's mounts), already in
-// the form sbx takes: `path` or `path:ro`. The project itself is emitted first, as ".", whenever
-// there are any — otherwise the first extra directory would become the primary workspace.
+// the form sbx takes: `path` or `path:ro`. The project itself always comes first, as ".": unlike
+// `sbx run`, `sbx create` without a path makes a sandbox with no workspace at all.
 func buildCreateArgs(template, agent, name string, clone bool, workspaces, extra []string) []string {
 	args := []string{"create", "--name", name, "--template", template, agent}
 	if clone {
 		args = append(args, "--clone")
 	}
-	if len(workspaces) > 0 {
-		args = append(args, ".")
-		args = append(args, workspaces...)
-	}
+	args = append(args, ".")
+	args = append(args, workspaces...)
 	return append(args, extra...)
 }
 

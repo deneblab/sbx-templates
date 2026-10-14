@@ -163,8 +163,10 @@ other than letters, digits, `-` and `.` become `-`); a project at a filesystem o
 ### `mounts:` — extra host directories (`mounts.go`)
 
 A list of `path` or `path:ro`, the syntax `sbx run` already takes for an extra workspace; `buildCreateArgs`
-receives the cache and the mounts as one `workspaces` list and always emits `.` first when it is not
-empty (otherwise the first extra directory becomes the primary workspace). Things worth keeping in mind:
+receives the cache and the mounts as one `workspaces` list and always emits `.` first, even when the list is
+empty: unlike `sbx run`, `sbx create` without a path makes a sandbox with **no workspace at all** (seen on a
+Windows host: the agent got an empty directory), and with extra directories the first would become the primary
+workspace. Things worth keeping in mind:
 
 - **sbxup adds care, not translation.** The config lives in the repository and the agent runs with
   permissions off, so a project can arrive with someone else's mounts. Layer 1, `checkMountAllowed`, is a

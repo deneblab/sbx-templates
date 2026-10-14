@@ -254,13 +254,14 @@ func TestBuildCreateArgs(t *testing.T) {
 		want       string
 	}{
 		{
-			name: "minimal",
-			want: "create --name app.claude --template img:1 claude",
+			// `sbx create` without a path makes a sandbox with no workspace (seen on a host).
+			name: "minimal still mounts the project",
+			want: "create --name app.claude --template img:1 claude .",
 		},
 		{
 			name:  "clone",
 			clone: true,
-			want:  "create --name app.claude --template img:1 claude --clone",
+			want:  "create --name app.claude --template img:1 claude --clone .",
 		},
 		{
 			name:       "cache mounts the workspace pair",
