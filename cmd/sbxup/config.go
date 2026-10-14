@@ -63,6 +63,8 @@ type Config struct {
 	Mounts []string
 	// GitHub asks for a short-lived GitHub App token for the repository in `origin`; nil means off.
 	GitHub *GitHubConfig
+	// Restrict asks for deny rules in the sandbox's policy (restrict.go); nil means none.
+	Restrict *RestrictConfig
 }
 
 // GitHubConfig is the `github:` block, in one of two modes. With ClientID, sbxup uses the user's
@@ -149,6 +151,12 @@ func loadConfig(path string) (*Config, error) {
 				return nil, err
 			}
 			cfg.GitHub = g
+		case "restrict":
+			r, err := parseRestrict(val, path)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Restrict = r
 		case "build":
 			b, err := parseBuild(val, path)
 			if err != nil {
@@ -159,7 +167,7 @@ func loadConfig(path string) (*Config, error) {
 			warnf("Key 'branch' in %s is no longer supported ('sbx run' dropped --branch). "+
 				"Rename it to 'clone: true|false'.", path)
 		default:
-			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache, mounts, github)", key, path)
+			warnf("Unknown key '%s' in %s (expected: template, version, agent, clone, cache, mounts, github, restrict)", key, path)
 		}
 	}
 
@@ -295,6 +303,34 @@ func parseGitHub(val any, path string) (*GitHubConfig, error) {
 		g.Permissions = defaultGitHubPermissions
 	}
 	return g, nil
+}
+
+// parseRestrict reads the `restrict:` block. As under `github:`, an unknown key is an error: a misspelt
+// `no-psuh` would otherwise drop a restriction without a word. Values must be booleans.
+func parseRestrict(val any, path string) (*RestrictConfig, error) {
+	if val == nil {
+		return nil, nil
+	}
+	m, ok := val.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("'restrict' in %s must be a block, e.g. 'no-push: true'", path)
+	}
+	r := &RestrictConfig{}
+	for key, v := range m {
+		b, ok := v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("'restrict.%s' in %s is %v; use true or false", key, path, v)
+		}
+		switch strings.ToLower(key) {
+		case "no-push":
+			r.NoPush = b
+		case "no-delete":
+			r.NoDelete = b
+		default:
+			return nil, fmt.Errorf("unknown key 'restrict.%s' in %s (expected: no-push, no-delete)", key, path)
+		}
+	}
+	return r, nil
 }
 
 // checkTemplateName rejects an image reference where a template name belongs. Before templates

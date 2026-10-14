@@ -124,6 +124,65 @@ func buildRunArgs(template, agent string, clone bool, workspaces []string, extra
 	return args
 }
 
+// sandboxNameFor turns the candidate (agent-folder) into a name `sbx create --name` accepts: letters,
+// digits, '-' and '.', at least two characters, not "default". Every other character becomes '-'.
+// resolveSandboxName folds names, so a later start finds the sandbox under either spelling.
+func sandboxNameFor(candidate string) string {
+	var b strings.Builder
+	for _, r := range candidate {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '.' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	name := strings.TrimLeft(b.String(), "-.")
+	if len(name) < 2 || strings.EqualFold(name, "default") {
+		name = "sbx-" + name
+	}
+	return name
+}
+
+// runOnlyFlags are the `sbx run` flags `sbx create` does not take (sbx 0.48).
+var runOnlyFlags = map[string]bool{"--detach": true, "-d": true, "--new": true, "--rm": true}
+
+// splitRunArgs divides the extra arguments between `sbx create` and the `sbx run` that follows it:
+// run-only flags and everything after "--" (the agent's own arguments) go to run, the rest to create.
+func splitRunArgs(extra []string) (create, run []string) {
+	for i := 0; i < len(extra); i++ {
+		a := extra[i]
+		switch {
+		case a == "--":
+			return create, append(run, extra[i:]...)
+		case runOnlyFlags[a] || strings.HasPrefix(a, "--detach-keys="):
+			run = append(run, a)
+		case a == "--detach-keys":
+			run = append(run, a)
+			if i+1 < len(extra) {
+				i++
+				run = append(run, extra[i])
+			}
+		default:
+			create = append(create, a)
+		}
+	}
+	return create, run
+}
+
+// buildCreateArgs is buildRunArgs for `sbx create`, with the sandbox name sbxup chose, so policy rules
+// and the GitHub token can be set before `sbx run --name` starts the agent.
+func buildCreateArgs(template, agent, name string, clone bool, workspaces, extra []string) []string {
+	args := []string{"create", "--name", name, "--template", template, agent}
+	if clone {
+		args = append(args, "--clone")
+	}
+	if len(workspaces) > 0 {
+		args = append(args, ".")
+		args = append(args, workspaces...)
+	}
+	return append(args, extra...)
+}
+
 // runSbx executes `sbx` with the current stdio attached, so interactive sessions work.
 //
 // While it runs, sbxup catches Ctrl+C instead of dying: the child gets the interrupt from the

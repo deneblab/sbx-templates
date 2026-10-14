@@ -66,6 +66,9 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
     app-id-field: app-id                    # optional: used when the client-id field is missing
     repositories: [docs]                    # optional: more repos of the same owner
     permissions: {contents: write}          # optional (default: contents, pull_requests, issues: write)
+  restrict:            # optional: deny rules in the sandbox policy (guardrails, not a boundary)
+    no-push: true      # no git push over HTTPS, no commits through the GitHub API
+    no-delete: true    # no DELETE on api.github.com/repos/**
 
 'sbxup --init' writes all of these as comments, with only 'template' live.
 
@@ -82,10 +85,17 @@ With 'bitwarden-item', sbxup reads the app's key from Bitwarden ('bw'; asks for 
 unless BW_SESSION is set, Enter skips), sets a one-hour token with 'sbx secret set github', renews it
 while 'sbx run' lasts and revokes it on exit. The first use per project is approved once.
 
+Restrictions: 'restrict:' adds deny rules to the sandbox's sbx policy before the agent starts (a new
+sandbox is created first, then started), and tells the agent about them. They stop a push or a delete
+made by mistake; GraphQL and SSH stay open. Pushing to some repositories only is the token's job:
+'github.repositories' narrows it.
+
 Mounts are checked before anything is built: the home directory and credential directories
 (~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
 
-Extra arguments are passed through to 'sbx run'.
+Extra arguments are passed through to 'sbx run'. When a new sandbox is created first ('restrict:' or
+'github:'), they go to 'sbx create', except --detach, --detach-keys, --new, --rm and everything after
+'--', which go to the 'sbx run' that follows.
 `
 
 type options struct {
@@ -343,16 +353,56 @@ func run(argv []string) error {
 	for _, m := range mounts {
 		workspaces = append(workspaces, m.Spec())
 	}
-	args := buildRunArgs(template, agent, cloneEnabled, workspaces, o.extra)
+	// With restrictions or a GitHub token, a new sandbox is created first and started second, so the
+	// policy rules and the token are in place before the agent runs. Otherwise one `sbx run` does both.
+	twoStep := existing == "" && (cfg.Restrict != nil || cfg.GitHub != nil)
+	var args, runExtra []string
+	fresh := false
+	if twoStep {
+		createExtra, rest := splitRunArgs(o.extra)
+		runExtra = rest
+		sandbox := sandboxNameFor(candidate)
+		args = buildCreateArgs(template, agent, sandbox, cloneEnabled, workspaces, createExtra)
+		if o.dryRun {
+			fmt.Printf("[dry-run] sbx %s\n", strings.Join(args, " "))
+			if err := applyRestrictions(sandbox, cfg.Restrict, true, true); err != nil {
+				return err
+			}
+			fmt.Printf("[dry-run] sbx %s\n", strings.Join(append([]string{"run", "--name", sandbox}, runExtra...), " "))
+			return nil
+		}
+		if err := runSbx(args...); err != nil {
+			return fmt.Errorf("sbx create failed: %w", err)
+		}
+		existing, fresh = sandbox, true
+	} else {
+		args = buildRunArgs(template, agent, cloneEnabled, workspaces, o.extra)
+	}
 
 	if o.dryRun {
+		if existing != "" {
+			if err := applyRestrictions(existing, cfg.Restrict, false, true); err != nil {
+				return err
+			}
+			fmt.Printf("[dry-run] sbx run --name %s\n", existing)
+			return nil
+		}
 		fmt.Printf("[dry-run] sbx %s\n", strings.Join(args, " "))
 		return nil
 	}
 
+	if existing != "" {
+		if err := applyRestrictions(existing, cfg.Restrict, fresh, false); err != nil {
+			if fresh {
+				return fmt.Errorf("%w (sandbox %s was created but not started)", err, existing)
+			}
+			return err
+		}
+	}
+
 	if gh != nil {
-		// Resumed: the token is in place before the session starts. New: keepFresh sets it as
-		// soon as sbx lists the sandbox.
+		// The sandbox has its name by now unless sbx picks it (no two-step start), in which case
+		// keepFresh sets the token as soon as sbx lists the sandbox.
 		if existing != "" {
 			if err := sbxSecretSet(existing, gh.token); err != nil {
 				warnf("GitHub token: %v", err)
@@ -364,6 +414,9 @@ func run(argv []string) error {
 		defer func() { cancel(); <-done; gh.revoke() }()
 	}
 
+	if fresh {
+		return runSbx(append([]string{"run", "--name", existing}, runExtra...)...)
+	}
 	// Resume an existing sandbox rather than failing on "already exists".
 	if existing != "" {
 		fmt.Printf("Resuming existing sandbox: %s\n", existing)

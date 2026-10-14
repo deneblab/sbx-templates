@@ -70,6 +70,18 @@ var configDocs = []configDoc{
 			"    contents: write",
 			"    pull_requests: write",
 		}},
+	{Key: "restrict",
+		Para: []string{
+			"Deny rules in this sandbox's sbx policy: the proxy refuses a git push over HTTPS and",
+			"GitHub API writes that create commits (no-push), or DELETE on api.github.com/repos",
+			"(no-delete). Guardrails, not a boundary: GraphQL and SSH stay open. To allow pushes",
+			"to some repositories only, narrow the token instead ('github.repositories').",
+		},
+		Lines: []string{
+			"restrict:",
+			"  no-push: true     # no git push, no commits through the GitHub API",
+			"  no-delete: true   # no DELETE on api.github.com/repos/**",
+		}},
 }
 
 // renderConfig writes the config body. templateLine is the live `template:` line; liveVersion, when

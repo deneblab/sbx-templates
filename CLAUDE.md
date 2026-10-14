@@ -219,8 +219,9 @@ keeping in mind:
   otherwise mint a token with the defaults.
 - **The session outlives `sbx run`.** `run()` starts `keepFresh` beside `runSbx` and, after it returns,
   cancels it, waits for it and revokes the last token. A refresh mints 15 minutes before expiry, sets the
-  new token and revokes the old one. A new sandbox is named by sbx only after `sbx run` starts, so
-  `keepFresh` first polls `sbx list` (up to 2 minutes) before setting the token.
+  new token and revokes the old one. A new sandbox is created first (`sbx create --name`, see
+  "Repository restrictions"), so the token is set before the agent starts; the poll of `sbx ls` (up to
+  2 minutes) in `keepFresh` remains for a sandbox whose name sbx picks.
 - **Ctrl+C.** `runSbx` catches `os.Interrupt` with `signal.Notify` while the child runs, so sbxup lives to
   revoke the token. Not `signal.Ignore`: an ignored signal is inherited by the child.
 - **`sbx secret set` needs `-f`** (`sbxSecretSetArgs`): without it sbx refuses to replace an existing
@@ -271,6 +272,39 @@ every start and ran `bw` five times. Things worth keeping in mind:
   `githubAPIBase`, `sleepCtx` and `sbxSecretSet`.
 - **Not yet verified on a host**: a real app with device flow enabled, two sandboxes at once, `gh api` and
   `git push` with a `ghu_` token through the sbx proxy.
+
+### Repository restrictions: `restrict:` (`restrict.go`)
+
+`restrict: {no-push: true, no-delete: true}` adds HTTP deny rules to the sandbox's own sbx policy
+(`sbx policy deny network --sandbox N HOST --method M --path P`), so the sandbox proxy refuses a git push
+over HTTPS, the GitHub API writes that create commits (contents, git/*, merges), or a DELETE under
+`api.github.com/repos/**`. Checked on a host with sbx 0.48 (Windows, 2026-10-14). Things worth keeping in mind:
+
+- **Guardrails, not a boundary.** GraphQL (`createCommitOnBranch`, which `gh` also needs for reading) and
+  SSH stay open. The boundary is the token: "push only to repository X" is an installation token narrowed
+  with `github.repositories`, which GitHub enforces whatever the URL.
+- **Only wildcard rules.** Path rules match case-sensitively: a rule for `/PKudrel/Fringe2026.git/…` did not
+  stop a push to `/pkudrel/fringe2026.git/…`, and GitHub accepts either. `/*/*/git-receive-pack` stopped both
+  (and covers `repo.git`). "Push only to X" cannot be written at all: no negation, deny beats allow, and the
+  default local policy is `default-allow-all`.
+- **No approval, and a failure stops the start.** Deny rules only narrow, so a repository may ask for them.
+  A rule that cannot be applied is an error (sandbox created but not started), unlike the GitHub token,
+  where going without is the safe direction. Unknown keys and non-boolean values are errors.
+- **Create, then run.** With `restrict:` or `github:`, a new sandbox is made with
+  `sbx create --name <sandboxNameFor(candidate)> …`, then rules and the token are set, then
+  `sbx run --name`. `splitRunArgs` sends `--detach`, `--detach-keys`, `--new`, `--rm` and everything after
+  `--` to `run`, the rest to `create`. Without either key the single `sbx run` is unchanged.
+- **Reconciled on every start, owned rules only.** `sbx policy ls N --json` (`{"rules": [...]}`; HTTP rules
+  have `resource_type: http`, `methods`, `http_targets[{host,path}]`, `scope: sandbox:N`) gives what is in
+  place; adding an existing rule is a no-op anyway ("Already covered"). `sbxup/restrict/<sandbox>.json` in the
+  user cache records the rules sbxup added, so dropping a key removes only those, never a rule the user had.
+  `sbx policy rm` needs `-f` (0.48 confirmations need a terminal). Nothing configured and nothing recorded
+  costs no sbx call.
+- **The agent is told.** git hides the proxy's reason and shows only `RPC failed; HTTP 403` (REST shows
+  `Blocked by local rule for …`). A block between `<!-- sbxup:restrict -->` markers is written into
+  `/home/agent/.claude/CLAUDE.md` with `sbx exec`; Claude reads it as user instructions. It is **replaced,
+  not appended** (appending twice duplicated it on the host), and written only when its text changes.
+- **Seams:** `sbxPolicyDeny`, `sbxPolicyRm`, `sbxExecStdin`, plus `sbxOutput` for `policy ls`.
 
 ## Local Templates Without Docker Hub
 
