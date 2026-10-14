@@ -85,6 +85,16 @@ var configDocs = []configDoc{
 			"  no-push: true     # no git push, no commits through the GitHub API",
 			"  no-delete: true   # no DELETE on api.github.com/repos/**",
 		}},
+	{Key: "hide",
+		Para: []string{
+			"Project directories the agent must not reach. Each is covered in the sandbox by an",
+			"empty read-only mount, and the agent loses sudo, which could unmount it. Default:",
+			"'dev' when it exists; 'hide: []' turns it off. Not with clone mode.",
+		},
+		Lines: []string{
+			"hide:",
+			"  - dev",
+		}},
 }
 
 // renderConfig writes the config body. templateLine is the live `template:` line; liveVersion, when

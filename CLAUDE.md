@@ -106,6 +106,7 @@ agent: claude        # optional (default: claude)
 sandbox: app.claude  # optional: sandbox name (default: <parent>.<folder>.<agent>)
 clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
+hide: [dev]          # optional: covered in the sandbox, agent loses sudo (default: dev, when it exists)
 ```
 
 The minimal config is `template: dotnet10`. **There is no registry mode**: `template` is always a name
@@ -321,6 +322,40 @@ over HTTPS, the GitHub API writes that create commits (contents, git/*, merges),
   `/home/agent/.claude/CLAUDE.md` with `sbx exec`; Claude reads it as user instructions. It is **replaced,
   not appended** (appending twice duplicated it on the host), and written only when its text changes.
 - **Seams:** `sbxPolicyDeny`, `sbxPolicyRm`, `sbxExecStdin`, plus `sbxOutput` for `policy ls`.
+
+### Hidden directories: `hide:` (`hide.go`)
+
+`hide: [dev]` keeps project directories (typically git-ignored, filled by hand) out of the agent's reach
+while it works live on the rest of the repository. `sbx` mounts a workspace only whole, so each path is
+covered by `sbx mount <sandbox> <cover>:<target>:ro` and the agent loses sudo. Design and host evidence:
+SBXT-011, GitHub #2. Things worth keeping in mind:
+
+- **The cover is a boundary only without sudo.** On a Windows host (sbx 0.48) `sudo umount` removed it and
+  the agent wrote into the host's real `dev`. `dropSudo` runs `sudo -n rm -f /etc/sudoers.d/agent` and checks
+  that `sudo -n true` then fails; the passwords of `agent` and `root` are locked, so `%sudo` and `su` lead
+  nowhere. **A template with a Docker daemon inside would reopen it** (the `docker` group is root): none of
+  ours has one; keep it that way or drop `hide:` support for that template.
+- **Default `dev`.** No key hides `dev` when it exists (`hideEntries`); `hide: []` is off. So `Config.Hide`
+  is a `*[]string`: nil (absent) and empty (off) mean different things.
+- **One cover per sandbox and target**, `os.UserConfigDir()/sbxup/hide/<sandbox>/<sha256(target)[:12]>/`
+  holding only `HIDDEN.txt`, because `sbx umount` revokes the source for *every* mount of it. Config dir,
+  not cache: sbx refuses to start a sandbox whose saved mount lost its source, and `ensureCover` recreates
+  every cover before each start. The record `…/hide/<sandbox>.json` sits beside them (mounts made,
+  `sudoDropped`, notice).
+- **Order.** New sandbox: `sbx create` → restrictions → `applyHide` (`sbx exec <s> true` to start it, since
+  `sbx mount` needs a running sandbox and there is no `sbx start`; mount; drop sudo; notice) → token →
+  `sbx run`. A mount that hits "not running" is retried once after another start (seen on a host).
+  Resume: only the difference to the record (`sbx umount` works on a stopped sandbox, no start needed).
+- **Failure stops the start** (created, not started), like `restrict:`; a failed `sbx umount` is a warning.
+- **Sudo does not come back** when entries are removed; the message names `sbx rm`.
+- **Target path:** `sandboxPath` — the host path, on Windows `W:\x` → `/w/x` (what `sbx create` prints);
+  UNC is an error. `sbx mount` creates a missing target, in the sandbox and empty on the host.
+- **Clone mode is refused** with `hide:`: the host repo stays readable at `/run/sandbox/source` (ro);
+  covering there is not verified.
+- **The agent is told** in a `<!-- sbxup:hide -->` block (`blockScript`, shared with `restrict:`).
+- **Seams:** `sbxStart`, `sbxMount`, `sbxUmount`, `dropSudo`, `sbxExecStdin`; `TestMain` makes the first
+  four fail.
+- **Not yet verified on a host:** the sbxup flow end to end, mounts surviving `sbx run`, Linux and macOS.
 
 ## Local Templates Without Docker Hub
 

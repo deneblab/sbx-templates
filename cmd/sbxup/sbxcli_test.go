@@ -13,6 +13,11 @@ func TestMain(m *testing.M) {
 	sbxOutput = func(args ...string) ([]byte, error) {
 		return nil, errors.New("sbx is not available in tests")
 	}
+	noSbx := errors.New("sbx is not available in tests")
+	sbxStart = func(string) error { return noSbx }
+	sbxMount = func(string, string, string) error { return noSbx }
+	sbxUmount = func(string, string, string) error { return noSbx }
+	dropSudo = func(string) error { return noSbx }
 	os.Exit(m.Run())
 }
 

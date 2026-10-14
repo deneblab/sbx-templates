@@ -106,6 +106,7 @@ mounts:              # optional: extra host directories; ':ro' for read-only (se
   - ~/shared-libs:ro
 github:              # optional: a short-lived GitHub App token for the sandbox (see below)
   bitwarden-item: github-deneblab-agent
+hide: [dev]          # optional: directories the agent cannot reach (default: dev, when it exists)
 ```
 
 The sandbox is named after the project and its parent directory: `/w/deneblab/sbx-templates` gets
@@ -255,6 +256,34 @@ mounts:
   project files). sbxup prints a note about it, and asks nothing, when it resumes.
 
 When `cache` is set, the directory is created at the project root (if missing) and mounted as an additional workspace in the sandbox. Package caches (NuGet, npm, Go modules) stored under `/workspace/.sbx-cache/` will persist across sandbox runs.
+
+### Hiding directories from the agent
+
+`hide` lists project directories the agent must not reach. The files stay where they are on the host; in
+the sandbox each directory shows only a `HIDDEN.txt`:
+
+```yaml
+template: dotnet10
+hide:
+  - dev
+  - data/private
+```
+
+- **Default.** Without the key, sbxup hides `dev` when the project has one. `hide: []` hides nothing.
+- **How.** `sbx` cannot leave part of a workspace out, so sbxup covers each directory with a read-only
+  `sbx mount` of its own empty directory (`~/.config/sbxup/hide/`, `%APPDATA%\sbxup\hide\` on Windows,
+  `~/Library/Application Support/sbxup/hide/` on macOS) before the agent starts. A directory that does not
+  exist yet is covered too (`sbx` creates it, empty, on the host).
+- **No sudo.** `sudo umount` would remove the cover, so the agent loses `sudo` in that sandbox: no
+  `sudo apt-get install` there. Removing an entry later takes its cover away but does not bring `sudo`
+  back; `sbx rm <name>` and a new start do. Sandboxes without anything to hide keep `sudo`.
+- **Entries** are paths relative to the project: no `..`, no absolute paths, no patterns, and none that
+  overlaps `cache`, a `mounts` entry or another entry. A failed cover or `sudo` removal stops the start.
+- **Changes apply to an existing sandbox** on its next start: a new entry is covered, a removed one is
+  uncovered.
+- **Not with clone mode.** `--clone` keeps the whole host repository readable at `/run/sandbox/source`,
+  so `hide` and `clone` together are an error for now (set `hide: []` to use clone mode).
+- **Keep such directories git-ignored.** The cover hides them from the agent, not from git.
 
 ### Skills
 

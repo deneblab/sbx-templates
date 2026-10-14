@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,6 +68,9 @@ type Config struct {
 	GitHub *GitHubConfig
 	// Restrict asks for deny rules in the sandbox's policy (restrict.go); nil means none.
 	Restrict *RestrictConfig
+	// Hide lists repository paths covered in the sandbox (hide.go). nil means the key is absent, which
+	// hides `dev` when it exists; an empty list turns hiding off.
+	Hide *[]string
 }
 
 // GitHubConfig is the `github:` block, in one of two modes. With ClientID, sbxup uses the user's
@@ -165,6 +169,12 @@ func loadConfig(path string) (*Config, error) {
 				return nil, err
 			}
 			cfg.Restrict = r
+		case "hide":
+			h, err := parseHide(val, path)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Hide = &h
 		case "build":
 			b, err := parseBuild(val, path)
 			if err != nil {
@@ -175,7 +185,7 @@ func loadConfig(path string) (*Config, error) {
 			warnf("Key 'branch' in %s is no longer supported ('sbx run' dropped --branch). "+
 				"Rename it to 'clone: true|false'.", path)
 		default:
-			warnf("Unknown key '%s' in %s (expected: template, version, agent, sandbox, clone, cache, mounts, github, restrict)", key, path)
+			warnf("Unknown key '%s' in %s (expected: template, version, agent, sandbox, clone, cache, mounts, github, restrict, hide)", key, path)
 		}
 	}
 
@@ -339,6 +349,61 @@ func parseRestrict(val any, path string) (*RestrictConfig, error) {
 		}
 	}
 	return r, nil
+}
+
+// parseHide reads the `hide:` list: paths relative to the project, one mount each. A single string is a
+// list of one; `hide: []` (or an empty value) is an empty list, which turns hiding off. Absolute paths,
+// `..`, globs and the project itself are errors: the config comes from the repository, and a pattern
+// cannot be mounted.
+func parseHide(val any, path string) ([]string, error) {
+	var items []any
+	switch t := val.(type) {
+	case nil:
+		return []string{}, nil
+	case string:
+		items = []any{t}
+	case []any:
+		items = t
+	default:
+		return nil, fmt.Errorf("'hide' in %s must be a list of paths inside the project, e.g. [dev]", path)
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, item := range items {
+		s, ok := item.(string)
+		s = strings.TrimSpace(s)
+		if !ok || s == "" {
+			return nil, fmt.Errorf("each entry of 'hide' in %s must be a path such as 'dev', got %v", path, item)
+		}
+		if err := checkHideEntry(s); err != nil {
+			return nil, fmt.Errorf("'hide' entry %q in %s: %v", s, path, err)
+		}
+		clean := filepath.Clean(filepath.FromSlash(s))
+		if !seen[clean] {
+			seen[clean] = true
+			out = append(out, clean)
+		}
+	}
+	return out, nil
+}
+
+func checkHideEntry(s string) error {
+	norm := strings.ReplaceAll(s, `\`, "/")
+	switch {
+	case strings.HasPrefix(norm, "/") || filepath.IsAbs(s) || (len(s) >= 2 && s[1] == ':'):
+		return errors.New("use a path relative to the project directory")
+	case strings.ContainsAny(s, "*?["):
+		return errors.New("patterns are not supported; name each directory")
+	}
+	for _, seg := range strings.Split(norm, "/") {
+		if seg == ".." {
+			return errors.New("'..' leaves the project")
+		}
+	}
+	if c := filepath.Clean(filepath.FromSlash(s)); c == "." {
+		return errors.New("the project itself cannot be hidden")
+	}
+	return nil
 }
 
 // checkTemplateName rejects an image reference where a template name belongs. Before templates

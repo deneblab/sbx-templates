@@ -70,6 +70,7 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   restrict:            # optional: deny rules in the sandbox policy (guardrails, not a boundary)
     no-push: true      # no git push over HTTPS, no commits through the GitHub API
     no-delete: true    # no DELETE on api.github.com/repos/**
+  hide: [dev]          # optional: directories covered in the sandbox (default: dev, when it exists)
 
 'sbxup --init' writes all of these as comments, with only 'template' live.
 
@@ -90,6 +91,11 @@ Restrictions: 'restrict:' adds deny rules to the sandbox's sbx policy before the
 sandbox is created first, then started), and tells the agent about them. They stop a push or a delete
 made by mistake; GraphQL and SSH stay open. Pushing to some repositories only is the token's job:
 'github.repositories' narrows it.
+
+Hidden directories: each 'hide:' path is covered in the sandbox by a read-only mount of a directory
+holding only HIDDEN.txt, before the agent starts; the files stay on the host. The agent loses sudo in
+that sandbox, since sudo could unmount the cover; removing an entry later does not bring sudo back
+('sbx rm' does). Without the key sbxup hides 'dev' when the project has one; 'hide: []' hides nothing.
 
 Mounts are checked before anything is built: the home directory and credential directories
 (~/.ssh, ~/.aws, ...) are refused, and mounts outside the project need your approval once.
@@ -313,6 +319,12 @@ func run(argv []string) error {
 	if err != nil {
 		return err
 	}
+	// Precedence: --no-clone > --clone > config 'clone' key (default: off).
+	cloneEnabled := (cfg.Clone || o.clone) && !o.noClone
+	hide, err := resolveHide(hideEntries(cfg.Hide, cwd), cwd, cachePath, mounts, cloneEnabled)
+	if err != nil {
+		return err
+	}
 	// Before a template is built, like the mounts, so a question does not wait behind minutes of build.
 	importSkills(existing != "", o.noSkills, o.dryRun)
 	// The token too: a password prompt must not wait behind a build.
@@ -322,14 +334,6 @@ func run(argv []string) error {
 		return err
 	}
 
-	// Precedence: --no-clone > --clone > config 'clone' key (default: off).
-	cloneEnabled := cfg.Clone
-	if o.clone {
-		cloneEnabled = true
-	}
-	if o.noClone {
-		cloneEnabled = false
-	}
 	if cloneEnabled {
 		fmt.Println("Clone mode: on (--clone)")
 	}
@@ -366,6 +370,9 @@ func run(argv []string) error {
 			if err := applyRestrictions(sandbox, cfg.Restrict, true, true); err != nil {
 				return err
 			}
+			if err := applyHide(sandbox, hide, true, true); err != nil {
+				return err
+			}
 			fmt.Printf("[dry-run] sbx %s\n", strings.Join(append([]string{"run", "--name", sandbox}, runExtra...), " "))
 			return nil
 		}
@@ -379,15 +386,24 @@ func run(argv []string) error {
 		if err := applyRestrictions(existing, cfg.Restrict, false, true); err != nil {
 			return err
 		}
+		if err := applyHide(existing, hide, false, true); err != nil {
+			return err
+		}
 		fmt.Printf("[dry-run] sbx run --name %s\n", existing)
 		return nil
 	}
 
-	if err := applyRestrictions(existing, cfg.Restrict, fresh, false); err != nil {
+	notStarted := func(err error) error {
 		if fresh {
 			return fmt.Errorf("%w (sandbox %s was created but not started)", err, existing)
 		}
 		return err
+	}
+	if err := applyRestrictions(existing, cfg.Restrict, fresh, false); err != nil {
+		return notStarted(err)
+	}
+	if err := applyHide(existing, hide, fresh, false); err != nil {
+		return notStarted(err)
 	}
 
 	if gh != nil {

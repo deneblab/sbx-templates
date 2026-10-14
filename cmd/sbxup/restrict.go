@@ -200,11 +200,15 @@ const (
 	noticeEnd   = "<!-- /sbxup:restrict -->"
 )
 
-// noticeScript replaces sbxup's block in ~/.claude/CLAUDE.md with stdin (an empty stdin removes it).
-// Replacing, not appending: appending twice left the text there twice on a host.
-const noticeScript = `f="$HOME/.claude/CLAUDE.md"; mkdir -p "$HOME/.claude" && touch "$f" && ` +
-	`awk -v s='` + noticeStart + `' -v e='` + noticeEnd + `' '$0==s{skip=1} !skip{print} $0==e{skip=0}' "$f" > "$f.sbxup" && ` +
-	`cat >> "$f.sbxup" && mv "$f.sbxup" "$f"`
+// blockScript replaces the block between start and end in ~/.claude/CLAUDE.md with stdin (an empty
+// stdin removes it). Replacing, not appending: appending twice left the text there twice on a host.
+func blockScript(start, end string) string {
+	return `f="$HOME/.claude/CLAUDE.md"; mkdir -p "$HOME/.claude" && touch "$f" && ` +
+		`awk -v s='` + start + `' -v e='` + end + `' '$0==s{skip=1} !skip{print} $0==e{skip=0}' "$f" > "$f.sbxup" && ` +
+		`cat >> "$f.sbxup" && mv "$f.sbxup" "$f"`
+}
+
+var noticeScript = blockScript(noticeStart, noticeEnd)
 
 // restrictNotice tells the agent why a push or a delete fails: git hides the proxy's reason and shows
 // only "RPC failed; HTTP 403".
