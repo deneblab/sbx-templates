@@ -1,3 +1,41 @@
-# This repo builds its own template locally rather than pulling it — the same flow
-# `sbxup --init` sets up for any project. See "Run without Docker Hub" in README.md.
-template: dotnet10
+template: golang124-node24   # built locally from src/sbx-claude-golang124-node24/Dockerfile in the release tarball
+cache: .sbx-cache
+
+# version: 0.2.9     # pin the release to freeze the environment; without it sbxup follows the latest
+# agent: claude      # agent passed to 'sbx run' (default: claude)
+# clone: true        # run on a private in-container git clone (default: off)
+# cache: .sbx-cache  # project directory mounted into the sandbox for package caches
+
+# Extra host directories mounted into the sandbox; append :ro for read-only.
+# Directories outside the project are approved once; your home directory and
+# credential directories such as ~/.ssh are refused.
+# mounts:
+#   - ../shared-libs:ro
+
+# GitHub token for the sandbox from your own login: run 'sbxup --gh-login' once per
+# machine, then no password and no key. It acts as you with the app's permissions, in
+# every organization where the app is installed. The first use per project asks for
+# your approval. Use this block or the Bitwarden one below, not both.
+github:
+  client-id: Iv23liaEy0Z52GC9CjOw                # the GitHub App's client ID (device flow enabled)
+
+# Or: a short-lived GitHub App installation token for the repo in 'origin', renewed
+# while 'sbx run' lasts. The app's private key is read from Bitwarden on the host
+# ('bw'); only the token reaches the sandbox.
+# github:
+#   bitwarden-item: github-deneblab-agent  # item with a .pem attachment and a client-id field
+#   key-attachment: app.private-key.pem    # default: the item's only .pem attachment
+#   client-id-field: client-id             # default: client-id
+#   app-id-field: app-id                   # used when the client-id field is missing
+#   repositories: [docs]                   # more repos of the same owner as 'origin'
+#   permissions:                           # default: contents, pull_requests, issues: write
+#     contents: write
+#     pull_requests: write
+
+# Deny rules in this sandbox's sbx policy: the proxy refuses a git push over HTTPS and
+# GitHub API writes that create commits (no-push), or DELETE on api.github.com/repos
+# (no-delete). Guardrails, not a boundary: GraphQL and SSH stay open. To allow pushes
+# to some repositories only, narrow the token instead ('github.repositories').
+# restrict:
+#   no-push: true     # no git push, no commits through the GitHub API
+#   no-delete: true   # no DELETE on api.github.com/repos/**
