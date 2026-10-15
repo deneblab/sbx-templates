@@ -51,7 +51,7 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   template: dotnet10   # a template from the release, built locally on first use
   version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
   agent: claude        # optional (default: claude)
-  sandbox: app_claude  # optional: sandbox name (default: <parent>_<folder>_<agent>)
+  sandbox: app-claude  # optional: sandbox name (default: <parent>--<folder>--<agent>)
   clone: false         # optional: true => run on a private in-container git clone
   cache: .sbx-cache    # optional: mount local cache dir into sandbox
   mounts:              # optional: extra host directories; ':ro' for read-only
@@ -310,8 +310,8 @@ func run(argv []string) error {
 	// Looked up before the template so an update offer can say the sandbox will keep its image;
 	// the same answer decides below whether to resume it.
 	existing := resolveSandboxName(sandbox)
-	// Names fold without '.' and '_', so a sandbox from before the '_' separator is resumed; it keeps its
-	// name, and sbx cannot apply an approval to a name with a '.'.
+	// Names fold without '.' and '-', so a sandbox from before the '--' separator (a.b.claude) is resumed; it
+	// keeps its name, and sbx cannot apply an approval to a name with a '.'.
 	if strings.Contains(existing, ".") {
 		fmt.Printf("Note: sbx cannot apply network approvals to %s (a '.' in the name); 'sbx rm %s' (this "+
 			"deletes the sandbox's state, not your project files) and a new start create %s.\n", existing, existing, sandbox)

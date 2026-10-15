@@ -103,7 +103,7 @@ project/
 template: dotnet10   # a template from the templates-v* release, built locally on first use
 version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
 agent: claude        # optional (default: claude)
-sandbox: app_claude  # optional: sandbox name (default: <parent>_<folder>_<agent>)
+sandbox: app-claude  # optional: sandbox name (default: <parent>--<folder>--<agent>)
 clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
 hide: [dev]          # optional: covered in the sandbox, agent loses sudo (default: dev, when it exists)
@@ -146,16 +146,18 @@ When `cache` is set, the directory is created at the project root (if missing) a
 
 ### The sandbox name is sbxup's (`sandboxName` in `sbx.go`)
 
-`<parent>_<folder>_<agent>`, e.g. `deneblab_sbx-templates_claude`, through `joinSandboxName` (in each part,
-characters other than letters, digits and `-` become `-`, so `_` only ever separates); a project at a
-filesystem or drive root gets `<folder>_<agent>`. `sandbox:` replaces it verbatim. Things worth keeping in mind:
+`<parent>--<folder>--<agent>`, e.g. `deneblab--sbx-templates--claude`, through `joinSandboxName` (in each
+part, characters other than letters and digits become `-`, runs of `-` collapse and `-` is trimmed at both
+ends, so `--` only ever separates); a project at a filesystem or drive root gets `<folder>--<agent>`.
+`sandbox:` replaces it verbatim. Things worth keeping in mind:
 
-- **`_`, not `.` and not `/`** (SBXT-012). `sbx create --name` was documented as taking letters, digits, `-`
-  and `.`, so the separator used to be `.`; but the scope of an approval rule takes only letters, digits,
-  `-` and `_`, and `sbx policy approval respond` failed for every sbxup sandbox (`invalid approval policy
-  scope: condition values[0] "antipiracy.simplescraper.claude" must contain only alphanumeric characters,
-  hyphens, and underscores`). **Not yet verified:** that `sbx create --name` accepts `_`.
-- **Dotted sandboxes are resumed, with a note.** `foldName` drops `.` and `_`, so the sandbox an older sbxup
+- **`--`, not `_`, not `.` and not `/`** (SBXT-012, DENEBLA-001). Only letters, digits and `-` pass both
+  checks: the scope of an approval rule refuses `.` (`sbx policy approval respond` failed for every sbxup
+  sandbox: `invalid approval policy scope: condition values[0] "antipiracy.simplescraper.claude" must
+  contain only alphanumeric characters, hyphens, and underscores`), and `sbx create --name` refuses `_`
+  (`error: sandbox name cannot contain underscores: antipiracy_simplescraper_claude`), so no `_` sandbox was
+  ever created. The doubled `-` keeps the parts readable. **Not yet verified on a host:** that both accept `--`.
+- **Dotted sandboxes are resumed, with a note.** `foldName` drops `.`, `_` and `-`, so the sandbox an older sbxup
   named `a.b.claude` is found and resumed under its own name (its `restrict/` and `hide/` records are keyed
   by it, so they still match). `run()` prints that approvals cannot be applied to it and names `sbx rm`.
 - **sbxup always names the sandbox**, so every new one is created in two steps (`sbx create --name`, then

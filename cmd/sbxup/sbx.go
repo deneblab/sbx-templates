@@ -105,41 +105,55 @@ func resolveSandboxName(sandbox string) string {
 	return ""
 }
 
-// sandboxNameFor turns one part of a name (a folder, an agent) into letters, digits and '-': every other
-// character becomes '-', so '_' stays free to separate the parts. resolveSandboxName folds names, so a
-// later start finds the sandbox under either spelling.
+// sandboxNameFor turns one part of a name (a folder, an agent) into letters, digits and single '-': every
+// other character becomes '-', runs of '-' collapse and '-' is trimmed at both ends, so a part never holds
+// the "--" that separates the parts. resolveSandboxName folds names, so a later start finds the sandbox
+// under either spelling.
 func sandboxNameFor(raw string) string {
 	var b strings.Builder
+	dash := false
 	for _, r := range raw {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			if dash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
 			b.WriteRune(r)
+			dash = false
 		} else {
-			b.WriteByte('-')
+			dash = true
 		}
 	}
 	return b.String()
 }
 
-// joinSandboxName joins the parts with '_' into a name both `sbx create --name` and the scope of an
-// approval rule (`sbx policy approval respond`: letters, digits, '-' and '_') accept: at least two
-// characters, not starting with '-' or '_', not "default". ('_' in `sbx create --name` is not yet
-// checked on a host.)
+// sandboxNameSep separates the parts of a sandbox name. Only letters, digits and '-' are accepted both by
+// `sbx create --name` (no '_') and by the scope of an approval rule (`sbx policy approval respond`: no '.'),
+// so the separator is a doubled '-', which sandboxNameFor keeps out of every part.
+const sandboxNameSep = "--"
+
+// joinSandboxName joins the parts with sandboxNameSep into a name both `sbx create --name` and the scope of
+// an approval rule accept: at least two characters, not starting or ending with '-', not "default". Parts
+// that clean to nothing are dropped.
 func joinSandboxName(parts ...string) string {
-	clean := make([]string, len(parts))
-	for i, p := range parts {
-		clean[i] = sandboxNameFor(p)
+	clean := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if c := sandboxNameFor(p); c != "" {
+			clean = append(clean, c)
+		}
 	}
-	name := strings.TrimLeft(strings.Join(clean, "_"), "-_")
-	if len(name) < 2 || strings.EqualFold(name, "default") {
+	name := strings.Join(clean, sandboxNameSep)
+	if name == "" {
+		name = "sbx"
+	} else if len(name) < 2 || strings.EqualFold(name, "default") {
 		name = "sbx-" + name
 	}
 	return name
 }
 
 // sandboxName is the name sbxup gives the project's sandbox: the config's `sandbox:` verbatim, or
-// `<parent>_<folder>_<agent>` (deneblab_sbx-templates_claude), which tells apart two projects that
-// share a folder name. A project at a filesystem or drive root has no parent: `<folder>_<agent>`.
-// Not '.': sbx refuses it in the scope of an approval rule, so no approval could be applied.
+// `<parent>--<folder>--<agent>` (deneblab--sbx-templates--claude), which tells apart two projects that
+// share a folder name. A project at a filesystem or drive root has no parent: `<folder>--<agent>`.
+// Not '.' (sbx refuses it in the scope of an approval rule) and not '_' (`sbx create --name` refuses it).
 func sandboxName(cwd, agent, override string) string {
 	if override != "" {
 		return override
@@ -153,11 +167,11 @@ func sandboxName(cwd, agent, override string) string {
 // validSandboxName reports whether a name from the config is used unchanged: the same rules
 // joinSandboxName enforces, checked instead of applied, because the user typed it.
 func validSandboxName(name string) bool {
-	if len(name) < 2 || strings.EqualFold(name, "default") || strings.IndexAny(name[:1], "-_") == 0 {
+	if len(name) < 2 || strings.EqualFold(name, "default") || name[0] == '-' || name[len(name)-1] == '-' {
 		return false
 	}
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-') {
 			return false
 		}
 	}
