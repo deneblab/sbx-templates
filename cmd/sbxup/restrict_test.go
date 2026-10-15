@@ -264,19 +264,26 @@ func TestNoticeScriptReplacesItsBlock(t *testing.T) {
 	}
 }
 
-func TestSandboxNameFor(t *testing.T) {
-	for in, want := range map[string]string{
-		"claude-AbcVersion": "claude-AbcVersion",
-		"claude-my_app 2":   "claude-my-app-2",
-		"claude-proj.v2":    "claude-proj.v2",
-		"-x":                "sbx-x",
-		"default":           "sbx-default",
+func TestJoinSandboxName(t *testing.T) {
+	for _, tc := range []struct {
+		parts []string
+		want  string
+	}{
+		{[]string{"claude-AbcVersion"}, "claude-AbcVersion"},
+		{[]string{"my_app 2", "claude"}, "my-app-2_claude"},
+		{[]string{"proj.v2", "claude"}, "proj-v2_claude"},
+		{[]string{"-x"}, "sbx-x"},
+		{[]string{"_x", "y"}, "x_y"},
+		{[]string{"default"}, "sbx-default"},
 	} {
-		if got := sandboxNameFor(in); got != want {
-			t.Errorf("sandboxNameFor(%q) = %q, want %q", in, got, want)
+		if got := joinSandboxName(tc.parts...); got != tc.want {
+			t.Errorf("joinSandboxName(%q) = %q, want %q", tc.parts, got, tc.want)
+		}
+		if !validSandboxName(tc.want) {
+			t.Errorf("joinSandboxName(%q) = %q is not a valid name", tc.parts, tc.want)
 		}
 	}
-	if foldName(sandboxNameFor("claude-my_app")) != foldName("claude-my_app") {
+	if foldName(joinSandboxName("my_app", "claude")) != foldName("my_app.claude") {
 		t.Error("a later resolveSandboxName would not find the sandbox")
 	}
 }
@@ -296,10 +303,11 @@ func TestSplitRunArgsAndCreateArgs(t *testing.T) {
 func TestSandboxName(t *testing.T) {
 	p := filepath.FromSlash
 	for _, tc := range []struct{ cwd, agent, override, want string }{
-		{"/w/deneblab/sbx-templates", "claude", "", "deneblab.sbx-templates.claude"},
-		{"/home/u/my_org/My App", "claude", "", "my-org.My-App.claude"},
-		{"/proj", "claude", "", "proj.claude"},
-		{"/w/deneblab/sbx-templates", "claude", "mine.x", "mine.x"},
+		{"/w/deneblab/sbx-templates", "claude", "", "deneblab_sbx-templates_claude"},
+		{"/home/u/my_org/My App", "claude", "", "my-org_My-App_claude"},
+		{"/w/antipiracy/simplescraper.v2", "claude", "", "antipiracy_simplescraper-v2_claude"},
+		{"/proj", "claude", "", "proj_claude"},
+		{"/w/deneblab/sbx-templates", "claude", "mine_x", "mine_x"},
 	} {
 		if got := sandboxName(p(tc.cwd), tc.agent, tc.override); got != tc.want {
 			t.Errorf("sandboxName(%q, %q, %q) = %q, want %q", tc.cwd, tc.agent, tc.override, got, tc.want)
@@ -309,18 +317,23 @@ func TestSandboxName(t *testing.T) {
 	if foldName(sandboxName(p("/w/deneblab/sbx-templates"), "claude", "")) == foldName("claude-sbx-templates") {
 		t.Error("the new name matches an old sandbox")
 	}
+	// The dotted name of the previous release folds the same, so that sandbox is resumed, not orphaned.
+	if foldName(sandboxName(p("/w/deneblab/sbx-templates"), "claude", "")) != foldName("deneblab.sbx-templates.claude") {
+		t.Error("a sandbox with the dotted name is not found")
+	}
 }
 
 func TestValidSandboxName(t *testing.T) {
 	for name, want := range map[string]bool{
-		"deneblab.sbx-templates.claude": true,
+		"deneblab_sbx-templates_claude": true,
 		"ab":                            true,
+		"my_app":                        true,
 		"a":                             false,
 		"default":                       false,
 		"x/y":                           false,
-		"my_app":                        false,
+		"deneblab.sbx-templates.claude": false,
 		"-x":                            false,
-		".x":                            false,
+		"_x":                            false,
 	} {
 		if got := validSandboxName(name); got != want {
 			t.Errorf("validSandboxName(%q) = %v, want %v", name, got, want)
@@ -330,8 +343,8 @@ func TestValidSandboxName(t *testing.T) {
 
 func TestLoadConfigSandbox(t *testing.T) {
 	chdir(t)
-	write(t, "c.yaml", "template: dotnet10\nsandbox: app.claude\n")
-	if cfg, err := loadConfig("c.yaml"); err != nil || cfg.Sandbox != "app.claude" {
+	write(t, "c.yaml", "template: dotnet10\nsandbox: app_claude\n")
+	if cfg, err := loadConfig("c.yaml"); err != nil || cfg.Sandbox != "app_claude" {
 		t.Fatalf("cfg = %+v, err = %v", cfg, err)
 	}
 	write(t, "c.yaml", "template: dotnet10\nsandbox: deneblab/app\n")

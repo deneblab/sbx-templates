@@ -144,8 +144,9 @@ func loadConfig(path string) (*Config, error) {
 		case "sandbox":
 			cfg.Sandbox = scalarString(val)
 			if !validSandboxName(cfg.Sandbox) {
-				return nil, fmt.Errorf("sandbox '%s' in %s: use letters, digits, '-' and '.', at least two "+
-					"characters, not starting with '-' or '.', and not 'default'", cfg.Sandbox, path)
+				return nil, fmt.Errorf("sandbox '%s' in %s: use letters, digits, '-' and '_', at least two "+
+					"characters, not starting with '-' or '_', and not 'default' (no '.': sbx cannot apply an "+
+					"approval to such a sandbox)", cfg.Sandbox, path)
 			}
 		case "cache":
 			cfg.Cache = scalarString(val)

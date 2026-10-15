@@ -99,7 +99,7 @@ With every key:
 template: dotnet10   # a template from the templates-v* release, built locally on first use
 version: 0.2.8       # optional: pin the release (default: latest); a fork: owner/repo@0.1.4
 agent: claude        # optional (default: claude)
-sandbox: app.claude  # optional: sandbox name (default: <parent>.<folder>.<agent>)
+sandbox: app_claude  # optional: sandbox name (default: <parent>_<folder>_<agent>)
 clone: false         # optional: true => run on a private in-container git clone
 cache: .sbx-cache    # optional: mount local cache dir into sandbox
 mounts:              # optional: extra host directories; ':ro' for read-only (see below)
@@ -110,9 +110,11 @@ hide: [dev]          # optional: directories the agent cannot reach (default: de
 ```
 
 The sandbox is named after the project and its parent directory: `/w/deneblab/sbx-templates` gets
-`deneblab.sbx-templates.claude` (a project at a drive or filesystem root: `<folder>.<agent>`), so two
+`deneblab_sbx-templates_claude` (a project at a drive or filesystem root: `<folder>_<agent>`), so two
 projects that share a folder name in different organizations get different sandboxes. `sandbox:` sets the
-name verbatim (letters, digits, `-` and `.`). A sandbox from an older `sbxup` (`claude-<folder>`) is not
+name verbatim (letters, digits, `-` and `_`; no `.`, because sbx cannot apply a network approval to such a
+sandbox). A sandbox named with dots by an older `sbxup` is still resumed; `sbx rm <name>` and a new start
+replace it with one approvals work for. A sandbox from an older `sbxup` (`claude-<folder>`) is not
 resumed: the next start creates a new one, and `sbx rm claude-<folder>` removes the old one.
 
 Not a config key: `sbxup` also imports your skills into sbx's store (see "Skills" below); `--no-skills` skips it.

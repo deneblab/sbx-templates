@@ -105,19 +105,31 @@ func resolveSandboxName(sandbox string) string {
 	return ""
 }
 
-// sandboxNameFor turns a raw name (parent.folder.agent) into one `sbx create --name` accepts: letters,
-// digits, '-' and '.', at least two characters, not "default". Every other character becomes '-'.
-// resolveSandboxName folds names, so a later start finds the sandbox under either spelling.
+// sandboxNameFor turns one part of a name (a folder, an agent) into letters, digits and '-': every other
+// character becomes '-', so '_' stays free to separate the parts. resolveSandboxName folds names, so a
+// later start finds the sandbox under either spelling.
 func sandboxNameFor(raw string) string {
 	var b strings.Builder
 	for _, r := range raw {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '.' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
 			b.WriteRune(r)
 		} else {
 			b.WriteByte('-')
 		}
 	}
-	name := strings.TrimLeft(b.String(), "-.")
+	return b.String()
+}
+
+// joinSandboxName joins the parts with '_' into a name both `sbx create --name` and the scope of an
+// approval rule (`sbx policy approval respond`: letters, digits, '-' and '_') accept: at least two
+// characters, not starting with '-' or '_', not "default". ('_' in `sbx create --name` is not yet
+// checked on a host.)
+func joinSandboxName(parts ...string) string {
+	clean := make([]string, len(parts))
+	for i, p := range parts {
+		clean[i] = sandboxNameFor(p)
+	}
+	name := strings.TrimLeft(strings.Join(clean, "_"), "-_")
 	if len(name) < 2 || strings.EqualFold(name, "default") {
 		name = "sbx-" + name
 	}
@@ -125,27 +137,27 @@ func sandboxNameFor(raw string) string {
 }
 
 // sandboxName is the name sbxup gives the project's sandbox: the config's `sandbox:` verbatim, or
-// `<parent>.<folder>.<agent>` (deneblab.sbx-templates.claude), which tells apart two projects that
-// share a folder name. A project at a filesystem or drive root has no parent: `<folder>.<agent>`.
+// `<parent>_<folder>_<agent>` (deneblab_sbx-templates_claude), which tells apart two projects that
+// share a folder name. A project at a filesystem or drive root has no parent: `<folder>_<agent>`.
+// Not '.': sbx refuses it in the scope of an approval rule, so no approval could be applied.
 func sandboxName(cwd, agent, override string) string {
 	if override != "" {
 		return override
 	}
-	name := filepath.Base(cwd) + "." + agent
 	if dir := filepath.Dir(cwd); filepath.Dir(dir) != dir {
-		name = filepath.Base(dir) + "." + name
+		return joinSandboxName(filepath.Base(dir), filepath.Base(cwd), agent)
 	}
-	return sandboxNameFor(name)
+	return joinSandboxName(filepath.Base(cwd), agent)
 }
 
-// validSandboxName reports whether a name from the config passes `sbx create --name` unchanged:
-// the same rules sandboxNameFor enforces, checked instead of applied, because the user typed it.
+// validSandboxName reports whether a name from the config is used unchanged: the same rules
+// joinSandboxName enforces, checked instead of applied, because the user typed it.
 func validSandboxName(name string) bool {
-	if len(name) < 2 || strings.EqualFold(name, "default") || strings.IndexAny(name[:1], "-.") == 0 {
+	if len(name) < 2 || strings.EqualFold(name, "default") || strings.IndexAny(name[:1], "-_") == 0 {
 		return false
 	}
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '.') {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
 			return false
 		}
 	}
