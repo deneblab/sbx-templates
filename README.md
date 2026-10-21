@@ -290,6 +290,21 @@ hide:
   so `hide` and `clone` together are an error for now (set `hide: []` to use clone mode).
 - **Keep such directories git-ignored.** The cover hides them from the agent, not from git.
 
+### Pasting images (Alt+V)
+
+Claude Code pastes an image from the clipboard on `Ctrl+V`, but Windows Terminal takes `Ctrl+V` as a
+text paste, so in a sandbox nothing happens. `sbxup` therefore adds **`Alt+V`** for the same action
+(`chat:imagePaste`) to the sandbox's `~/.claude/keybindings.json`. `Ctrl+V` keeps working.
+
+- **The host must allow image paste:** `sbx settings set clipboard.imagePaste true`.
+- **Merged, never overwritten.** Your other bindings stay, and so does your own `alt+v` in the `Chat`
+  context, `null` (unbound) included.
+- **Once per sandbox.** A new sandbox gets it before the agent starts; a resume costs nothing, except for a
+  sandbox created by an older sbxup, which gets it on its next start. A record per sandbox sits in your
+  user cache (`sbxup/keybindings/`).
+- **It never stops a start.** A failure (e.g. a `keybindings.json` that is not valid JSON) is a warning,
+  and the next start tries again.
+
 ### Skills
 
 sbx mounts one shared `agent-skills` store, read-only, into every sandbox, and fills it only on request.

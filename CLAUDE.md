@@ -384,6 +384,28 @@ SBXT-011, GitHub #2. Things worth keeping in mind:
   there too and gets its cover from `~/.config/sbxup/hide/`, case variants do not exist, and both covers come
   back after a restart. **Not yet verified:** macOS.
 
+### Image paste: `alt+v` (`keybindings.go`)
+
+Windows Terminal takes `ctrl+v` as a text paste, so Claude Code's image paste (`chat:imagePaste`) never
+fires in a sandbox. `applyKeybindings` merges `"alt+v": "chat:imagePaste"` into the sandbox's
+`~/.claude/keybindings.json` with `sbx exec … sh -c keybindingsScript` (SBXT-020, GitHub #3). The
+clipboard bridge is sbx's (`sbx settings set clipboard.imagePaste true` on the host). Things worth keeping
+in mind:
+
+- **Not in the Dockerfile.** sbx writes `~/.claude` at sandbox start, and managed settings hold no
+  keybindings, so it can only be done in the running sandbox.
+- **jq, slurped.** `jq -s '(.[0] // {}) …'` reads a missing, empty or whitespace-only file as `{}`. `alt+v` is
+  added to the first `Chat` context (or a new one) unless any `Chat` context already binds it: `has`, not
+  `//=`, because `null` is a user unbinding the key on purpose. A file jq cannot read fails the script and
+  stays; an unchanged result is not written (`cmp -s`). `jq` is in all five templates; keep it there.
+- **Once per sandbox.** The record `sbxup/keybindings/<sandbox>.json` in the user cache (its existence is
+  the record) makes a resume cost no `sbx exec`; `fresh` ignores a record left by a removed sandbox of the
+  same name, and a sandbox without a record (an older sbxup) gets it on resume. Like the restrict and hide
+  notices this assumes `~/.claude` survives `sbx stop` + start. **Not yet verified on a host**, nor that
+  Alt+V reaches Claude Code through every terminal.
+- **No config key, and a failure is a warning** with no record, so the next start retries. It runs after
+  `applyHide` and before the GitHub token, at all three call sites in `run()`.
+
 ## Local Templates Without Docker Hub
 
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)

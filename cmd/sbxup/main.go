@@ -379,6 +379,7 @@ func run(argv []string) error {
 			if err := applyHide(sandbox, hide, true, true); err != nil {
 				return err
 			}
+			applyKeybindings(sandbox, true, true)
 			fmt.Printf("[dry-run] sbx %s\n", strings.Join(append([]string{"run", "--name", sandbox}, runExtra...), " "))
 			return nil
 		}
@@ -395,6 +396,7 @@ func run(argv []string) error {
 		if err := applyHide(existing, hide, false, true); err != nil {
 			return err
 		}
+		applyKeybindings(existing, false, true)
 		fmt.Printf("[dry-run] sbx run --name %s\n", existing)
 		return nil
 	}
@@ -411,6 +413,7 @@ func run(argv []string) error {
 	if err := applyHide(existing, hide, fresh, false); err != nil {
 		return notStarted(err)
 	}
+	applyKeybindings(existing, fresh, false)
 
 	if gh != nil {
 		if err := sbxSecretSet(existing, gh.token); err != nil {
