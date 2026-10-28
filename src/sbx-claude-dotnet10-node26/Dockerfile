@@ -14,19 +14,31 @@ RUN apt-get update \
     jq \
     unzip \
     procps \
- && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+ && curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
+    dotnet-runtime-10.0 \
     nodejs \
  && rm -rf /var/lib/apt/lists/*
 
-ARG GO_VERSION=1.24.2
-RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
-    | tar -C /usr/local -xz
+# .NET SDK — both apt sources (Ubuntu's own archive and ppa:dotnet/backports) cap at the
+# 10.0.1xx feature band, so a project whose global.json pins a 4xx SDK cannot be satisfied
+# from apt at all. Install the SDK from the official script instead; dotnet-runtime-10.0
+# above is present for its native dependencies (libicu and friends), which
+# dotnet-install.sh does not install.
+# DOTNET_SDK_VERSION is part of this layer's cache key, so bumping it rebuilds the SDK —
+# an unpinned apt install could never invalidate itself.
+ARG DOTNET_SDK_VERSION=10.0.403
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+ && bash /tmp/dotnet-install.sh --version "${DOTNET_SDK_VERSION}" --install-dir /usr/lib/dotnet \
+ && rm /tmp/dotnet-install.sh \
+ && ln -sf /usr/lib/dotnet/dotnet /usr/bin/dotnet
+ENV DOTNET_ROOT=/usr/lib/dotnet
 
 RUN mkdir -p \
-    /workspace/.sbx-cache/go/pkg \
-    /workspace/.sbx-cache/go/bin \
+    /home/agent/.nuget/packages \
+    /home/agent/.local/share/NuGet \
+    /workspace/.sbx-cache/nuget/packages \
     /workspace/.sbx-cache/npm \
  && chown -R agent:agent /home/agent /workspace
 
@@ -41,14 +53,19 @@ RUN mkdir -p /etc/claude-code \
 
 USER agent
 
-ENV PATH="/usr/local/go/bin:/workspace/.sbx-cache/go/bin:${PATH}"
-ENV GOPATH=/workspace/.sbx-cache/go
-ENV GOMODCACHE=/workspace/.sbx-cache/go/pkg/mod
-ENV GOBIN=/workspace/.sbx-cache/go/bin
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
+ENV NUGET_PACKAGES=/workspace/.sbx-cache/nuget/packages
 ENV npm_config_cache=/workspace/.sbx-cache/npm
 ENV SBX_SANDBOX=true
 
-RUN go version && node --version && npm --version
+# Prove the pinned SDK is the one that actually resolves — a silent fall back to
+# another feature band must fail here, not inside a user's sandbox. The same goes for
+# Node: setup_26.x must have given a 26.x, not whatever apt had first.
+RUN dotnet --info \
+ && test "$(dotnet --version)" = "${DOTNET_SDK_VERSION}" \
+ && node --version | grep -q '^v26\.' \
+ && node --version && npm --version
 
 # Stage 2: claude — install/update Claude Code; rebuild this stage alone to update
 FROM deps AS claude

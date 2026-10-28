@@ -99,60 +99,60 @@ tasks:
       - task: "_update-claude:{{OS}}"
         vars: { IMAGE: sbx-claude-dotnet10 }
 
-  # ── dotnet10-node24 ────────────────────────────────────────────────────────
+  # ── dotnet10-node26 ────────────────────────────────────────────────────────
 
-  "version:dotnet10-node24":
-    desc: "Show computed semver for sbx-claude-dotnet10-node24"
+  "version:dotnet10-node26":
+    desc: "Show computed semver for sbx-claude-dotnet10-node26"
     cmds:
       - task: "_version"
-        vars: { SCOPE: "src/sbx-claude-dotnet10-node24" }
+        vars: { SCOPE: "src/sbx-claude-dotnet10-node26" }
 
-  "build:dotnet10-node24":
-    desc: "Build sbx-claude-dotnet10-node24 locally"
+  "build:dotnet10-node26":
+    desc: "Build sbx-claude-dotnet10-node26 locally"
     cmds:
       - task: "_build:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+        vars: { IMAGE: sbx-claude-dotnet10-node26 }
 
-  "push:dotnet10-node24":
-    desc: "Build and push sbx-claude-dotnet10-node24"
+  "push:dotnet10-node26":
+    desc: "Build and push sbx-claude-dotnet10-node26"
     cmds:
       - task: "_push:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+        vars: { IMAGE: sbx-claude-dotnet10-node26 }
 
-  "update-claude:dotnet10-node24":
-    desc: "Update Claude Code in sbx-claude-dotnet10-node24 without rebuilding deps"
+  "update-claude:dotnet10-node26":
+    desc: "Update Claude Code in sbx-claude-dotnet10-node26 without rebuilding deps"
     cmds:
       - task: "_update-claude:{{OS}}"
-        vars: { IMAGE: sbx-claude-dotnet10-node24 }
+        vars: { IMAGE: sbx-claude-dotnet10-node26 }
 
-  # ── golang124-node24 ──────────────────────────────────────────────────────
+  # ── golang127-node26 ──────────────────────────────────────────────────────
 
-  "version:golang124-node24":
-    desc: "Show computed semver for sbx-claude-golang124-node24"
+  "version:golang127-node26":
+    desc: "Show computed semver for sbx-claude-golang127-node26"
     cmds:
       - task: "_version"
-        vars: { SCOPE: "src/sbx-claude-golang124-node24" }
+        vars: { SCOPE: "src/sbx-claude-golang127-node26" }
 
-  "build:golang124-node24":
-    desc: "Build sbx-claude-golang124-node24 locally"
+  "build:golang127-node26":
+    desc: "Build sbx-claude-golang127-node26 locally"
     cmds:
       - task: "_build:{{OS}}"
         vars:
-          IMAGE: sbx-claude-golang124-node24
+          IMAGE: sbx-claude-golang127-node26
 
-  "push:golang124-node24":
-    desc: "Build and push sbx-claude-golang124-node24"
+  "push:golang127-node26":
+    desc: "Build and push sbx-claude-golang127-node26"
     cmds:
       - task: "_push:{{OS}}"
         vars:
-          IMAGE: sbx-claude-golang124-node24
+          IMAGE: sbx-claude-golang127-node26
 
-  "update-claude:golang124-node24":
-    desc: "Update Claude Code in sbx-claude-golang124-node24 without rebuilding deps"
+  "update-claude:golang127-node26":
+    desc: "Update Claude Code in sbx-claude-golang127-node26 without rebuilding deps"
     cmds:
       - task: "_update-claude:{{OS}}"
         vars:
-          IMAGE: sbx-claude-golang124-node24
+          IMAGE: sbx-claude-golang127-node26
 
   # ── python-uv ─────────────────────────────────────────────────────────────
 

@@ -7,8 +7,8 @@ Deneblab sandbox templates for Claude Code development environments.
 | Template | Extras |
 |----------|--------|
 | `dotnet10` | .NET SDK 10.0.4xx |
-| `dotnet10-node24` | .NET SDK 10.0.4xx, Node.js 24.x |
-| `golang124-node24` | Go 1.24.2, Node.js 24.x |
+| `dotnet10-node26` | .NET SDK 10.0.4xx, Node.js 26.x |
+| `golang127-node26` | Go 1.27.3, Node.js 26.x |
 | `python-uv` | Latest Python via [uv](https://docs.astral.sh/uv/) |
 | `dotnet10-python-uv` | .NET SDK 10.0.4xx, latest Python via [uv](https://docs.astral.sh/uv/) |
 
@@ -18,7 +18,7 @@ Name one in `template:` (see [Example configs](#example-configs)); `sbxup` build
 All templates extend `docker/sandbox-templates:claude-code`.
 
 The .NET images install the SDK from `dotnet-install.sh`, pinned by `ARG DOTNET_SDK_VERSION`
-(currently `10.0.401`), because both apt sources cap at the 10.0.1xx band — a `global.json`
+(currently `10.0.403`), because both apt sources cap at the 10.0.1xx band — a `global.json`
 pinning a 4xx SDK cannot be satisfied from apt. Override for one build with
 `build-push.sh --dotnet-sdk-version X.Y.Z` (PowerShell: `-DotnetSdkVersion`).
 
@@ -127,8 +127,8 @@ release and does not pull one of ours from a registry. A value like
 
 ### Example configs
 
-The template is chosen by its short name: `dotnet10`, `dotnet10-node24`, `dotnet10-python-uv`,
-`golang124-node24` or `python-uv`. Every key except `template` is optional.
+The template is chosen by its short name: `dotnet10`, `dotnet10-node26`, `dotnet10-python-uv`,
+`golang127-node26` or `python-uv`. Every key except `template` is optional.
 
 **Minimal** — the latest release, everything else at its default:
 
@@ -139,7 +139,7 @@ template: dotnet10
 **A different stack, on a private clone, with a package cache:**
 
 ```yaml
-template: golang124-node24
+template: golang127-node26
 clone: true              # the agent works on a private in-container git clone of the repo
 cache: .sbx-cache        # created at the project root if it is missing
 ```
@@ -518,8 +518,8 @@ task build                # build default image locally
 task push                 # build and push default image
 
 task build:dotnet10       # build sbx-claude-dotnet10
-task build:dotnet10-node24  # build sbx-claude-dotnet10-node24
-task build:golang124-node24    # build sbx-claude-golang124-node24
+task build:dotnet10-node26  # build sbx-claude-dotnet10-node26
+task build:golang127-node26    # build sbx-claude-golang127-node26
 task build:python-uv           # build sbx-claude-python-uv
 task build:dotnet10-python-uv  # build sbx-claude-dotnet10-python-uv
 ```
@@ -545,8 +545,8 @@ task build:dotnet10
 
 ```bash
 task update-claude:dotnet10          # .NET 10
-task update-claude:dotnet10-node24   # .NET 10 + Node 24
-task update-claude:golang124-node24  # Go + Node 24
+task update-claude:dotnet10-node26   # .NET 10 + Node 26
+task update-claude:golang127-node26  # Go + Node 26
 task update-claude:python-uv         # Python + uv
 task update-claude:dotnet10-python-uv  # .NET 10 + Python/uv
 task update-claude                   # default image

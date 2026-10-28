@@ -24,7 +24,7 @@ RUN apt-get update \
 # dotnet-install.sh does not install.
 # DOTNET_SDK_VERSION is part of this layer's cache key, so bumping it rebuilds the SDK —
 # an unpinned apt install could never invalidate itself.
-ARG DOTNET_SDK_VERSION=10.0.401
+ARG DOTNET_SDK_VERSION=10.0.403
 RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
  && bash /tmp/dotnet-install.sh --version "${DOTNET_SDK_VERSION}" --install-dir /usr/lib/dotnet \
  && rm /tmp/dotnet-install.sh \

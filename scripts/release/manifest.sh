@@ -51,7 +51,7 @@ scope_version() {
 }
 
 # Read a key from a simple `key: value` YAML file, keeping inner whitespace so descriptions
-# like ".NET SDK 10.0, Node.js 24.x" survive intact.
+# like ".NET SDK 10.0, Node.js 26.x" survive intact.
 yaml_val() {
   local file="$1" key="$2"
   grep -E "^${key}:" "$file" 2>/dev/null | head -1 \
