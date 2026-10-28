@@ -1,4 +1,4 @@
-template: golang124-node24   # built locally from src/sbx-claude-golang124-node24/Dockerfile in the release tarball
+template: golang127-node26   # built locally from src/sbx-claude-golang127-node26/Dockerfile in the release tarball
 cache: .sbx-cache
 
 # version: 0.2.9     # pin the release to freeze the environment; without it sbxup follows the latest

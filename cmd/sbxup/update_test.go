@@ -57,7 +57,7 @@ func TestTemplateTagsIn(t *testing.T) {
 			t.Errorf("counted the pkudrel/ Docker Hub image: %v", got)
 		}
 	}
-	if got := templateTagsIn(out, "sbx-claude-golang124-node24"); len(got) != 0 {
+	if got := templateTagsIn(out, "sbx-claude-golang127-node26"); len(got) != 0 {
 		t.Errorf("tags for an unbuilt template = %v", got)
 	}
 }

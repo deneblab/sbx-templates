@@ -51,7 +51,10 @@ $shortSha  = (& git -C $RepoRoot rev-parse --short=7 HEAD).Trim()
 $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
 
 $pushFlag     = if ($NoPush) { "--load" } else { "--push" }
-$noCacheArgs  = if ($UpdateClaude) { @("--no-cache-filter", "claude") } else { @() }
+# A full build re-checks the floating base image (docker/sandbox-templates:claude-code), so a
+# rebuild picks up a new one. -UpdateClaude must not: if the base had moved, --pull would
+# rebuild the deps stage too, which is exactly what that switch promises not to do.
+$cacheArgs    = if ($UpdateClaude) { @("--no-cache-filter", "claude") } else { @("--pull") }
 # Only the .NET templates declare ARG DOTNET_SDK_VERSION; passing it unconditionally would
 # make every other template warn that the build-arg was not consumed.
 $sdkArgs      = if ($DotnetSdkVersion) { @("--build-arg", "DOTNET_SDK_VERSION=$DotnetSdkVersion") } else { @() }
@@ -65,9 +68,8 @@ if ($DotnetSdkVersion) { Write-Host "SDK override  : $DotnetSdkVersion" }
 Write-Host ""
 
 if ($DryRun) {
-    $noCacheStr = if ($UpdateClaude) { "--no-cache-filter claude " } else { "" }
     Write-Host "[dry-run] would run:"
-    Write-Host "  docker buildx build $pushFlag ${noCacheStr}``"
+    Write-Host "  docker buildx build $pushFlag $($cacheArgs -join ' ') ``"
     Write-Host "    -t ${Image}:${tag} ``"
     Write-Host "    -t ${Image}:latest ``"
     Write-Host "    --build-arg VERSION=$version ``"
@@ -78,7 +80,7 @@ if ($DryRun) {
     exit 0
 }
 
-& docker buildx build $pushFlag @noCacheArgs `
+& docker buildx build $pushFlag @cacheArgs `
     -t "${Image}:${tag}" `
     -t "${Image}:latest" `
     --build-arg "VERSION=$version" `

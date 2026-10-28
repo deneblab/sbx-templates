@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `sbx-templates` is a Deneblab repository for Claude Code sandbox Docker templates. It contains:
 
 - **`src/sbx-claude-dotnet10/Dockerfile`** — sandbox image extending `docker/sandbox-templates:claude-code` with .NET SDK 10.0.4xx; NuGet packages cached at `/workspace/.sbx-cache/nuget/packages`.
-- **`src/sbx-claude-dotnet10-node24/Dockerfile`** — .NET SDK 10.0.4xx + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
-- **`src/sbx-claude-golang124-node24/Dockerfile`** — Go 1.24.2 + Node.js 24.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
+- **`src/sbx-claude-dotnet10-node26/Dockerfile`** — .NET SDK 10.0.4xx + Node.js 26.x (active LTS); caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/npm`.
+- **`src/sbx-claude-golang127-node26/Dockerfile`** — Go 1.27.3 + Node.js 26.x (active LTS); caches at `/workspace/.sbx-cache/go/` and `/workspace/.sbx-cache/npm`.
 - **`src/sbx-claude-python-uv/Dockerfile`** — latest CPython managed by [uv](https://docs.astral.sh/uv/); `uv`/`uvx` copied from `ghcr.io/astral-sh/uv`, uv cache at `/workspace/.sbx-cache/uv`.
 - **`src/sbx-claude-dotnet10-python-uv/Dockerfile`** — .NET SDK 10.0.4xx + latest CPython via uv; caches at `/workspace/.sbx-cache/nuget/packages` and `/workspace/.sbx-cache/uv`.
 - **`.abcversion.json`** — one AbcVersion project per versioned path (`cmd/sbxup`, `src`, and each `src/sbx-claude-*`); see "Versioning".
@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### The .NET SDK comes from `dotnet-install.sh`, not apt
 
-The three .NET templates pin the SDK with `ARG DOTNET_SDK_VERSION` (currently **10.0.401**) and
+The three .NET templates pin the SDK with `ARG DOTNET_SDK_VERSION` (currently **10.0.403**) and
 install it via the official `dotnet-install.sh` into `/usr/lib/dotnet`. A reader would reasonably
 assume apt, so the reason matters:
 
@@ -47,7 +47,7 @@ Consequences worth keeping in mind when touching these Dockerfiles:
   band fails the build instead of surfacing in a user's sandbox.
 - **`build-push.sh --dotnet-sdk-version X.Y.Z`** (or `DOTNET_SDK_VERSION` in the environment)
   overrides the pin for one build; `build-push.ps1` takes `-DotnetSdkVersion`. The flag is passed to
-  `docker` **only when set**, because `golang124-node24` and `python-uv` declare no such `ARG` and
+  `docker` **only when set**, because `golang127-node26` and `python-uv` declare no such `ARG` and
   would otherwise warn about an unconsumed build-arg. `sbxup` never passes it, so the Dockerfile
   default governs there.
 
@@ -548,8 +548,8 @@ task build                # build default image locally (no push)
 task push                 # build and push default image
 
 task build:dotnet10       # build sbx-claude-dotnet10
-task build:dotnet10-node24  # build sbx-claude-dotnet10-node24
-task build:golang124-node24    # build sbx-claude-golang124-node24
+task build:dotnet10-node26  # build sbx-claude-dotnet10-node26
+task build:golang127-node26    # build sbx-claude-golang127-node26
 task build:python-uv           # build sbx-claude-python-uv
 task build:dotnet10-python-uv  # build sbx-claude-dotnet10-python-uv
 ```
@@ -578,14 +578,18 @@ task build:dotnet10          # full build, loads as docker.io/pkudrel/sbx-claude
 
 ```bash
 task update-claude:dotnet10          # dotnet10
-task update-claude:dotnet10-node24   # dotnet10 + Node 24
-task update-claude:golang124-node24  # Go + Node 24
+task update-claude:dotnet10-node26   # dotnet10 + Node 26
+task update-claude:golang127-node26  # Go + Node 26
 task update-claude:python-uv         # Python + uv
 task update-claude:dotnet10-python-uv  # .NET 10 + Python/uv
 task update-claude                   # default image (dotnet10)
 ```
 
 This runs `docker build --no-cache-filter claude ...`, re-running only the `claude` stage while keeping all other layers cached. The result is loaded into the local Docker daemon — no push required.
+
+A full build (`build-push.*` without `--update-claude`, and sbxup's first build, `--rebuild` and `--update`)
+passes `--pull`, so the floating `docker/sandbox-templates:claude-code` base is re-checked and a rebuild picks
+up a new one. `--update-claude` deliberately does not: a moved base would rebuild `deps` as well.
 
 Direct script usage:
 ```bash

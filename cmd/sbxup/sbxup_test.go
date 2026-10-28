@@ -483,7 +483,7 @@ func TestBuildArgs(t *testing.T) {
 	}{
 		{
 			name: "full build",
-			want: "buildx build --load -f /c/x.Dockerfile -t img:1 " +
+			want: "buildx build --load --pull -f /c/x.Dockerfile -t img:1 " +
 				"--build-arg VERSION=1 --build-arg SHORT_SHA=templates-v9 --build-arg BUILD_DATE=D /c",
 		},
 		{
@@ -867,7 +867,7 @@ func TestLoadConfigRejectsAnImageReference(t *testing.T) {
 }
 
 func TestCheckTemplateName(t *testing.T) {
-	for _, ok := range []string{"dotnet10", "sbx-claude-dotnet10", "dotnet10-node24", "python-uv"} {
+	for _, ok := range []string{"dotnet10", "sbx-claude-dotnet10", "dotnet10-node26", "python-uv"} {
 		if err := checkTemplateName(ok, "test"); err != nil {
 			t.Errorf("checkTemplateName(%q) = %v, want nil", ok, err)
 		}
@@ -1089,7 +1089,7 @@ func TestTemplateListedIn(t *testing.T) {
 		{"docker.io/pkudrel/sbx-claude-python-uv", true},        // implicit :latest
 		{"sbx-claude-dotnet10:0.1.4", false},                    // right name, wrong version
 		{"pkudrel/sbx-claude-dotnet10:0.1.3", false},            // right version, wrong namespace
-		{"sbx-claude-golang124-node24:0.1.3", false},            // absent entirely
+		{"sbx-claude-golang127-node26:0.1.3", false},            // absent entirely
 		{"REPOSITORY:TAG", false},                               // the header is not a template
 	}
 	for _, c := range cases {

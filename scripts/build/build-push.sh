@@ -67,9 +67,13 @@ else
   PUSH_FLAG="--push"
 fi
 
-NO_CACHE_FLAG=""
+# A full build re-checks the floating base image (docker/sandbox-templates:claude-code), so a
+# rebuild picks up a new one. --update-claude must not: if the base had moved, --pull would
+# rebuild the deps stage too, which is exactly what that flag promises not to do.
 if [ "${UPDATE_CLAUDE}" = true ]; then
-  NO_CACHE_FLAG="--no-cache-filter claude"
+  CACHE_FLAG="--no-cache-filter claude"
+else
+  CACHE_FLAG="--pull"
 fi
 
 # Only the .NET templates declare ARG DOTNET_SDK_VERSION; passing it unconditionally would
@@ -91,7 +95,7 @@ echo ""
 
 if [ "${DRY_RUN}" = true ]; then
   echo "[dry-run] would run:"
-  echo "  docker buildx build ${PUSH_FLAG} ${NO_CACHE_FLAG} \\"
+  echo "  docker buildx build ${PUSH_FLAG} ${CACHE_FLAG} \\"
   echo "    -t ${IMAGE}:${tag} \\"
   echo "    -t ${IMAGE}:latest \\"
   echo "    --build-arg VERSION=${version} \\"
@@ -104,7 +108,7 @@ if [ "${DRY_RUN}" = true ]; then
   exit 0
 fi
 
-docker buildx build ${PUSH_FLAG} ${NO_CACHE_FLAG} \
+docker buildx build ${PUSH_FLAG} ${CACHE_FLAG} \
   -t "${IMAGE}:${tag}" \
   -t "${IMAGE}:latest" \
   --build-arg "VERSION=${version}" \

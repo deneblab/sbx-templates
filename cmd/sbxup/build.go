@@ -22,6 +22,10 @@ func buildArgs(dockerfile, context, tag, version, shortSHA, buildDate string, up
 	if updateClaude {
 		// Re-run only the `claude` stage; the deps stage (runtimes, apt) stays cached.
 		args = append(args, "--no-cache-filter", "claude")
+	} else {
+		// Re-check the floating base image, so a rebuild picks up a new one. Not with
+		// updateClaude: a moved base would rebuild the deps stage as well.
+		args = append(args, "--pull")
 	}
 	args = append(args,
 		"-f", dockerfile,
