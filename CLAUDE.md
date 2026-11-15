@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### The .NET SDK comes from `dotnet-install.sh`, not apt
 
 The three .NET templates pin the SDK with `ARG DOTNET_SDK_VERSION` (currently **10.0.403**) and
-install it via the official `dotnet-install.sh` into `/usr/lib/dotnet`. A reader would reasonably
+install it via the official `dotnet-install.sh` into `/usr/share/dotnet`. A reader would reasonably
 assume apt, so the reason matters:
 
 **Both apt sources cap at the 10.0.1xx feature band.** Ubuntu 26.04's own archive ships
@@ -38,13 +38,24 @@ Consequences worth keeping in mind when touching these Dockerfiles:
   runtime itself. `dotnet-install.sh` unpacks a tarball and installs no native libraries; letting
   dpkg own that closure (`libicu` above all) is what keeps the image working across base-image
   upgrades. Hand-listing `libicu78` instead would silently break the day Ubuntu renames it.
+- **The SDK lives in `/usr/share/dotnet`, never in `/usr/lib/dotnet`** (SBXT-024, GitHub #7). That
+  package also installs Ubuntu's source-built runtime and hostfxr into `/usr/lib/dotnet`. Sharing
+  that directory, the highest version won, the SDK ran on the distro runtime and reported RID
+  `ubuntu.26.04-x64`. NuGet does not know that RID, so every `dotnet tool install`/`restore` failed with
+  `Settings file 'DotnetToolSettings.xml' was not found in the package`. `/usr/bin/dotnet`,
+  `DOTNET_ROOT` and `/etc/dotnet/install_location[_<arch>]` (read by apphost-launched global tools
+  when `DOTNET_ROOT` is unset) all point at `/usr/share/dotnet`. Ubuntu's copy stays on disk, unused.
+  A sandbox made from an older image is fixed by `export DOTNET_RUNTIME_ID=linux-x64`, or by
+  `sbx rm` after `sbxup --update`.
 - **`ppa:dotnet/backports` and `software-properties-common` are gone** from all three templates.
   The PPA offered nothing the 26.04 archive lacks, and nothing now installs the SDK from apt.
 - **The `ARG` is the cache key.** An unpinned `apt-get install` sits in a cached layer that can
   never invalidate itself, so the SDK silently froze at whatever was current when the layer was
   first built. Bumping `DOTNET_SDK_VERSION` necessarily rebuilds that layer.
 - **Each `deps` stage asserts `dotnet --version` equals the pin**, so a silent fall back to another
-  band fails the build instead of surfacing in a user's sandbox.
+  band fails the build instead of surfacing in a user's sandbox. It also asserts that the SDK is
+  listed under `/usr/share/dotnet/sdk`, that `/usr/bin/dotnet` resolves there, and that every
+  `RID:` line of `dotnet --info` is `linux-x64` or `linux-arm64`.
 - **`build-push.sh --dotnet-sdk-version X.Y.Z`** (or `DOTNET_SDK_VERSION` in the environment)
   overrides the pin for one build; `build-push.ps1` takes `-DotnetSdkVersion`. The flag is passed to
   `docker` **only when set**, because `golang127-node26` and `python-uv` declare no such `ARG` and
