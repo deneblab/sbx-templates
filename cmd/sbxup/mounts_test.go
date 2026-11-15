@@ -11,33 +11,40 @@ func TestParseMountSpec(t *testing.T) {
 	cases := []struct {
 		in       string
 		wantPath string
+		wantTgt  string
 		wantRO   bool
 		wantErr  bool
 	}{
-		{"~/libs", "~/libs", false, false},
-		{"~/libs:ro", "~/libs", true, false},
-		{"~/libs:RO", "~/libs", true, false},
-		{"../docs:rw", "../docs", false, false}, // ':rw' is accepted and dropped
-		{"../docs:Rw", "../docs", false, false},
-		{` D:\data`, `D:\data`, false, false}, // a drive letter is not a mode
-		{`D:\data:ro`, `D:\data`, true, false},
-		{`D:\data:rw`, `D:\data`, false, false},
-		{"/tmp/a:b/c", "/tmp/a:b/c", false, false}, // the text after ':' holds a separator: no suffix
-		{"~/libs:r0", "", false, true},             // a typo must not quietly mean writable
-		{"~/libs:readonly", "", false, true},
-		{"~/libs:", "", false, true},
-		{":ro", "", false, true},
-		{"", "", false, true},
-		{"   ", "", false, true},
+		{"~/libs", "~/libs", "", false, false},
+		{"~/libs:ro", "~/libs", "", true, false},
+		{"~/libs:RO", "~/libs", "", true, false},
+		{"../docs:rw", "../docs", "", false, false}, // ':rw' is accepted and dropped
+		{"../docs:Rw", "../docs", "", false, false},
+		{` D:\data`, `D:\data`, "", false, false}, // a drive letter is not a mode
+		{`D:\data:ro`, `D:\data`, "", true, false},
+		{`D:\data:rw`, `D:\data`, "", false, false},
+		{"/tmp/a:b/c", "/tmp/a:b/c", "", false, false}, // the text after ':' holds a separator: no suffix
+		{"~/libs:/opt/libs", "~/libs", "/opt/libs", false, false},
+		{"~/libs:/opt/libs:ro", "~/libs", "/opt/libs", true, false},
+		{`D:\data:/mnt/data`, `D:\data`, "/mnt/data", false, false},
+		{`D:\data:/mnt/data:ro`, `D:\data`, "/mnt/data", true, false},
+		{"D:/data:/mnt/data", "D:/data", "/mnt/data", false, false},
+		{"~/libs:/opt/a:b", "", "", false, true}, // a ':' inside the target
+		{"~/libs:r0", "", "", false, true},       // a typo must not quietly mean writable
+		{"~/libs:readonly", "", "", false, true},
+		{"~/libs:", "", "", false, true},
+		{":ro", "", "", false, true},
+		{"", "", "", false, true},
+		{"   ", "", "", false, true},
 	}
 	for _, c := range cases {
-		path, ro, err := parseMountSpec(c.in)
+		path, tgt, ro, err := parseMountSpec(c.in)
 		if (err != nil) != c.wantErr {
 			t.Errorf("parseMountSpec(%q) error = %v, wantErr %v", c.in, err, c.wantErr)
 			continue
 		}
-		if err == nil && (path != c.wantPath || ro != c.wantRO) {
-			t.Errorf("parseMountSpec(%q) = (%q, %v), want (%q, %v)", c.in, path, ro, c.wantPath, c.wantRO)
+		if err == nil && (path != c.wantPath || tgt != c.wantTgt || ro != c.wantRO) {
+			t.Errorf("parseMountSpec(%q) = (%q, %q, %v), want (%q, %q, %v)", c.in, path, tgt, ro, c.wantPath, c.wantTgt, c.wantRO)
 		}
 	}
 }
@@ -48,6 +55,12 @@ func TestMountSpecAndMode(t *testing.T) {
 	}
 	if got := (Mount{Path: "/a", ReadOnly: true}).Spec(); got != "/a:ro" {
 		t.Errorf("read-only Spec = %q", got)
+	}
+	if got := (Mount{Path: "/a", Target: "/opt/a"}).Spec(); got != "/a:/opt/a" {
+		t.Errorf("target Spec = %q", got)
+	}
+	if got := (Mount{Path: "/a", Target: "/opt/a", ReadOnly: true}).Spec(); got != "/a:/opt/a:ro" {
+		t.Errorf("target read-only Spec = %q", got)
 	}
 	if (Mount{}).Mode() != "read-write" || (Mount{ReadOnly: true}).Mode() != "read-only" {
 		t.Error("Mode names are wrong")

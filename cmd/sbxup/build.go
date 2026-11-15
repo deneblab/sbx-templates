@@ -117,21 +117,15 @@ func templateTagsIn(out, repo string) []string {
 	return tagsOf(templateTableRefs(out), repo)
 }
 
-// templateRefsJSON reads `sbx template ls --json` into canonical references. The shape is an array
-// since sbx 0.48 and `{"images": [...]}` before; the field names are not documented, so each image
+// templateRefsJSON reads `sbx template ls --json` into canonical references. The shape is an array;
+// the field names are not documented, so each image
 // is read from whichever of the usual forms it carries: repository + tag, a name:tag reference, or a
 // list of them. An image list in which none of these is found is an error, not "nothing built":
 // that is what turns a format change into a warning instead of a rebuild on every start.
 func templateRefsJSON(data []byte) ([]string, error) {
 	var rows []map[string]any
 	if err := json.Unmarshal(data, &rows); err != nil {
-		var wrapped struct {
-			Images *[]map[string]any `json:"images"`
-		}
-		if json.Unmarshal(data, &wrapped) != nil || wrapped.Images == nil {
-			return nil, errors.New("not a list of images")
-		}
-		rows = *wrapped.Images
+		return nil, errors.New("not a list of images")
 	}
 	var refs []string
 	for _, row := range rows {

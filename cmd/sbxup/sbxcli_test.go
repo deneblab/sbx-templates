@@ -41,17 +41,15 @@ func stubSbx(t *testing.T, answers map[string]string) *[]string {
 
 func TestSandboxNamesJSON(t *testing.T) {
 	for in, want := range map[string]string{
-		`[{"name":"claude-AbcVersion","status":"running","detached":false},{"name":"claude-x"}]`: "claude-AbcVersion,claude-x", // 0.48
-		`{"sandboxes":[{"name":"claude-AbcVersion"}]}`:                                           "claude-AbcVersion",          // before 0.48
-		`[]`:               "",
-		`{"sandboxes":[]}`: "",
+		`[{"name":"claude-AbcVersion","status":"running","detached":false},{"name":"claude-x"}]`: "claude-AbcVersion,claude-x",
+		`[]`: "",
 	} {
 		got, err := sandboxNamesJSON([]byte(in))
 		if err != nil || strings.Join(got, ",") != want {
 			t.Errorf("%s: got %v, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, in := range []string{`not json`, `{"other":[]}`, `[{"id":"1"}]`} {
+	for _, in := range []string{`not json`, `{"other":[]}`, `{"sandboxes":[{"name":"x"}]}`, `[{"id":"1"}]`} {
 		if _, err := sandboxNamesJSON([]byte(in)); err == nil {
 			t.Errorf("%s: accepted", in)
 		}
@@ -75,22 +73,22 @@ func TestResolveSandboxNameReadsJSON(t *testing.T) {
 
 func TestSbxNamesFallsBackToTheTable(t *testing.T) {
 	calls := stubSbx(t, map[string]string{
-		"list": "NAME                STATUS\nclaude-AbcVersion   running\n",
+		"ls": "NAME                STATUS\nclaude-AbcVersion   running\n",
 	})
 	if got := resolveSandboxName("claude-abcversion"); got != "claude-AbcVersion" {
 		t.Fatalf("resolveSandboxName = %q", got)
 	}
-	if strings.Join(*calls, "|") != "ls --json|ls|list" {
-		t.Fatalf("calls %v, want JSON, then ls, then the old list", *calls)
+	if strings.Join(*calls, "|") != "ls --json|ls" {
+		t.Fatalf("calls %v, want JSON, then the table", *calls)
 	}
 }
 
 func TestTemplateRefsJSON(t *testing.T) {
 	cases := map[string]string{
-		// 0.48: an array; field names as Docker uses them.
+		// an array; field names as Docker uses them.
 		`[{"repository":"docker.io/library/sbx-claude-dotnet10","tag":"0.2.8","id":"c0ffee"}]`: "docker.io/library/sbx-claude-dotnet10:0.2.8",
-		// before 0.48: wrapped, any casing.
-		`{"images":[{"Repository":"sbx-claude-dotnet10","Tag":"0.1.3"}]}`: "docker.io/library/sbx-claude-dotnet10:0.1.3",
+		// any casing.
+		`[{"Repository":"sbx-claude-dotnet10","Tag":"0.1.3"}]`: "docker.io/library/sbx-claude-dotnet10:0.1.3",
 		// a single reference
 		`[{"name":"pkudrel/sbx-claude-python-uv:latest"}]`: "docker.io/pkudrel/sbx-claude-python-uv:latest",
 		// a list of references

@@ -182,7 +182,7 @@ ends, so `--` only ever separates); a project at a filesystem or drive root gets
 
 ### `mounts:` — extra host directories (`mounts.go`)
 
-A list of `path` or `path:ro`, the syntax `sbx run` already takes for an extra workspace; `buildCreateArgs`
+A list of `path`, `path:ro`, `path:target` or `path:target:ro` (`target` is where it lands in the sandbox, sbx 0.51+), the syntax `sbx run` already takes for an extra workspace; `buildCreateArgs`
 receives the cache and the mounts as one `workspaces` list and always emits `.` first, even when the list is
 empty: unlike `sbx run`, `sbx create` without a path makes a sandbox with **no workspace at all** (seen on a
 Windows host: the agent got an empty directory), and with extra directories the first would become the primary
@@ -207,6 +207,12 @@ workspace. Things worth keeping in mind:
   the colon is not a drive-letter colon. `:ro` is passed on, `:rw` is accepted and dropped (sbx knows no
   such suffix), anything else is an error, so `:r0` cannot mount a directory writable. `D:\data` and
   `D:\data:ro` both parse.
+- **The target** (`parseMountSpec`, `Mount.Target`): what is left after the mode may end in `:target`, an
+  absolute sandbox path: the last `:` followed by `/` that is not a drive-letter colon starts it, so
+  `~/libs:/opt/libs:ro`, `D:\data:/mnt/data` and `D:/data:/mnt/data` parse, and a `:` inside the target is an
+  error. It is part of the approval key and of the duplicate check (the same directory may be mounted twice
+  at different targets). `checkMountAllowed` still judges the host path only. sbx rejects targets that would
+  hide its shared skills store; that error is sbx's. **Not yet verified on a host.**
 - **Write access is the default**, which assumes an extra directory without `:ro` is writable in sbx. The
   docs only say "append `:ro` to make it read-only"; this has not been verified on a real sbx.
 - **The mounted path is the symlink-resolved one**, so what is checked is what is mounted.
@@ -322,10 +328,12 @@ over HTTPS, the GitHub API writes that create commits (contents, git/*, merges),
 - **Guardrails, not a boundary.** GraphQL (`createCommitOnBranch`, which `gh` also needs for reading) and
   SSH stay open. The boundary is the token: "push only to repository X" is an installation token narrowed
   with `github.repositories`, which GitHub enforces whatever the URL.
-- **Only wildcard rules.** Path rules match case-sensitively: a rule for `/PKudrel/Fringe2026.git/…` did not
-  stop a push to `/pkudrel/fringe2026.git/…`, and GitHub accepts either. `/*/*/git-receive-pack` stopped both
-  (and covers `repo.git`). "Push only to X" cannot be written at all: no negation, deny beats allow, and the
-  default local policy is `default-allow-all`.
+- **Only wildcard rules.** On sbx 0.48 path rules matched case-sensitively: a rule for `/PKudrel/Fringe2026.git/…`
+  did not stop a push to `/pkudrel/fringe2026.git/…`, and GitHub accepts either. **Since sbx 0.53 matching is
+  case-insensitive** (ASCII letters in paths and query parameters), so that bypass is closed and the rules
+  stay wildcards only for the other reason: `/*/*/git-receive-pack` covers every repository (and `repo.git`),
+  and "push only to X" still cannot be written: no negation, deny beats allow, and the default local policy
+  is `default-allow-all`. Not re-checked on a host after the change.
 - **No approval, and a failure stops the start.** Deny rules only narrow, so a repository may ask for them.
   A rule that cannot be applied is an error (sandbox created but not started), unlike the GitHub token,
   where going without is the safe direction. Unknown keys and non-boolean values are errors.
@@ -532,7 +540,18 @@ rebuild that cannot succeed. Docker is required only to build or update a templa
 (`--rebuild`, `--update-claude`, or a first run); `dockerAvailable()` is checked before building so
 the user gets an actionable message instead of a raw npipe/socket error.
 
-### Reading `sbx` output (sbx 0.48+)
+### Minimum sbx: 0.53 (`sbxversion.go`)
+
+`run()` calls `checkSbxVersion` after the config is loaded: `sbx --version` (no daemon needed) older than
+`minSbx` is an error that names the minimum. An sbx that cannot be run, or whose output holds no version
+number, is **not** judged (the commands that follow report it better), which is also what keeps the tests,
+where `sbxOutput` fails, unaffected. The first number in the output counts, so `sbx version 0.53.0` and
+`v0.54.0-rc7` both parse. What the minimum bought: no `sbx list`, no `{"sandboxes": [...]}` or
+`{"images": [...]}` shapes, `PATH:TARGET[:ro]` workspaces (0.51), and the 0.53 `sbx exec` (no `--detach`,
+`--privileged` or `--detach-keys`; sbxup passes none). `sbx run <agent> -- <args>` keeping the image's
+entrypoint arguments (0.53) does not touch sbxup: it runs `sbx run --name N`, with no agent.
+
+### Reading `sbx` output (sbx 0.53+)
 
 sbx 0.48 changed the human-readable output of every command (headings, status marks such as
 `● running`, a `CREATED` column) and moved errors, warnings and hints to stderr. sbxup therefore:
@@ -540,11 +559,10 @@ sbx 0.48 changed the human-readable output of every command (headings, status ma
 - **Reads stdout only**, through `sbxOutput` (a seam; `TestMain` makes it fail so no test runs a real
   `sbx`). The interactive `runSbx` and the commands whose output is only shown on failure
   (`sbx skills import`, `sbx secret set`) are unchanged.
-- **Asks for JSON first and keeps the table as the fallback** for an sbx without `--json`.
-  `sbx ls --json` is documented (`.[].name`; before 0.48 `.sandboxes[].name`), so `sbxNames` reads both
-  shapes. `sbx list` is tried only when `sbx ls` fails.
-- **`sbx template ls --json` has undocumented fields.** `templateRefsJSON` accepts the array (0.48) or
-  `{"images": [...]}` and, per image, repository + tag, a `name:tag` reference or a list of them, in any
+- **Asks for JSON first and keeps the table as the fallback** when the JSON cannot be read.
+  `sbx ls --json` is documented (`.[].name`), so `sbxNames` reads that array only; `sbx ls` is the table.
+- **`sbx template ls --json` has undocumented fields.** `templateRefsJSON` accepts the array and, per image,
+  repository + tag, a `name:tag` reference or a list of them, in any
   casing. An image list in which none is found is an error, not "nothing built": sbxup warns once and
   reads the table, because "nothing built" would rebuild the template on every start. When the real
   field names are known from a host, pin them here and narrow the parser.

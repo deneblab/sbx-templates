@@ -2,8 +2,9 @@ package main
 
 // Repository restrictions (`restrict:` in the config): HTTP deny rules in the sandbox's sbx policy, so
 // the sandbox proxy refuses a git push or a delete on GitHub. Checked on a host with sbx 0.48:
-//   - path rules match case-sensitively, so a rule naming one repository is bypassed by changing the
-//     case of the URL. Only rules with a wildcard for owner and repository are offered ("no push at all");
+//   - path rules matched case-sensitively there, so a rule naming one repository was bypassed by changing
+//     the case of the URL; since sbx 0.53 matching is case-insensitive. Only rules with a wildcard for
+//     owner and repository are offered ("no push at all"), because "only X" cannot be written (below);
 //   - "push only to X" cannot be written (no negation, deny beats allow, the default is allow-all). That
 //     is the token's job: an installation token narrowed with `github.repositories`;
 //   - adding a rule that exists is a no-op ("Already covered"), so rules are simply added on every start.

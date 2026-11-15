@@ -2,8 +2,8 @@ package main
 
 // Extra host directories declared in the config's `mounts:` list.
 //
-// The syntax is the one `sbx run` already takes for an extra workspace — `path` or `path:ro` — so
-// sbxup passes it through rather than translating it. What sbxup adds is care, because the config
+// The syntax is the one `sbx run` already takes for an extra workspace — `path`, `path:ro`,
+// `path:target` or `path:target:ro` (sbx 0.51+) — so sbxup passes it through rather than translating it. What sbxup adds is care, because the config
 // lives in the repository and the agent runs with permissions off: a project can arrive with
 // someone else's config. Two layers guard that (see checkMountAllowed and approveMounts).
 
@@ -22,15 +22,28 @@ import (
 // Mount is one resolved entry of `mounts:`.
 type Mount struct {
 	Path     string // absolute, cleaned, symlinks resolved
+	Target   string // absolute path in the sandbox; empty means sbx's default (the host path)
 	ReadOnly bool
 }
 
 // Spec is the form `sbx run` takes as a workspace argument.
 func (m Mount) Spec() string {
-	if m.ReadOnly {
-		return m.Path + ":ro"
+	spec := m.Path
+	if m.Target != "" {
+		spec += ":" + m.Target
 	}
-	return m.Path
+	if m.ReadOnly {
+		spec += ":ro"
+	}
+	return spec
+}
+
+// Label names the mount for messages: the host path, and where it lands when that is elsewhere.
+func (m Mount) Label() string {
+	if m.Target == "" {
+		return m.Path
+	}
+	return m.Path + " -> " + m.Target
 }
 
 // Mode names the access for messages.
@@ -41,16 +54,18 @@ func (m Mount) Mode() string {
 	return "read-write"
 }
 
-// parseMountSpec splits `path[:ro|:rw]`. `:ro` is what sbx understands; `:rw` is accepted so a
+// parseMountSpec splits `path[:target][:ro|:rw]`. `:ro` is what sbx understands; `:rw` is accepted so a
 // config can say what it does, and is dropped, since sbx knows no such suffix. Any other suffix is
 // an error: a typo such as `:r0` must not quietly mount a directory writable.
 //
-// The suffix is the text after the last colon when it holds no path separator and the colon is not
-// a drive-letter colon, so `D:\data` and `D:\data:ro` both parse.
-func parseMountSpec(spec string) (path string, readOnly bool, err error) {
+// The mode is the text after the last colon when it holds no path separator and the colon is not
+// a drive-letter colon, so `D:\data` and `D:\data:ro` both parse. What is left may end in `:target`,
+// an absolute path in the sandbox: the last colon that is followed by a `/` and is not a drive-letter
+// colon starts it.
+func parseMountSpec(spec string) (path, target string, readOnly bool, err error) {
 	s := strings.TrimSpace(spec)
 	if s == "" {
-		return "", false, fmt.Errorf("an empty mount")
+		return "", "", false, fmt.Errorf("an empty mount")
 	}
 	if i := strings.LastIndex(s, ":"); i >= 0 {
 		suffix := s[i+1:]
@@ -61,15 +76,22 @@ func parseMountSpec(spec string) (path string, readOnly bool, err error) {
 				readOnly = true
 			case "rw":
 			default:
-				return "", false, fmt.Errorf("unknown mode %q after ':' (use ':ro', or ':rw' / nothing for read-write)", suffix)
+				return "", "", false, fmt.Errorf("unknown mode %q after ':' (use ':ro', or ':rw' / nothing for read-write)", suffix)
 			}
 			s = strings.TrimSpace(s[:i])
 		}
 	}
-	if s == "" {
-		return "", false, fmt.Errorf("no path before the mode")
+	if i := strings.LastIndex(s, ":/"); i >= 0 && !(i == 1 && isASCIILetter(s[0])) {
+		target = strings.TrimSpace(s[i+1:])
+		s = strings.TrimSpace(s[:i])
+		if strings.Contains(target, ":") {
+			return "", "", false, fmt.Errorf("the target %q holds a ':'", target)
+		}
 	}
-	return s, readOnly, nil
+	if s == "" {
+		return "", "", false, fmt.Errorf("no path before the mode")
+	}
+	return s, target, readOnly, nil
 }
 
 func isASCIILetter(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') }
@@ -170,7 +192,7 @@ func resolveMounts(specs []string, home, project string, skip ...string) ([]Moun
 	home = resolveExisting(home)
 	var out []Mount
 	for _, spec := range specs {
-		raw, ro, err := parseMountSpec(spec)
+		raw, target, ro, err := parseMountSpec(spec)
 		if err != nil {
 			return nil, fmt.Errorf("mount %q: %w", spec, err)
 		}
@@ -188,7 +210,7 @@ func resolveMounts(specs []string, home, project string, skip ...string) ([]Moun
 			}
 		}
 		for _, m := range out {
-			if samePath(p, m.Path) {
+			if samePath(p, m.Path) && m.Target == target {
 				if m.ReadOnly != ro {
 					return nil, fmt.Errorf("mount %q is listed twice with different modes", p)
 				}
@@ -203,7 +225,7 @@ func resolveMounts(specs []string, home, project string, skip ...string) ([]Moun
 			warnf("Mount %q: %s is not an existing directory — skipping it.", spec, p)
 			continue
 		}
-		out = append(out, Mount{Path: p, ReadOnly: ro})
+		out = append(out, Mount{Path: p, Target: target, ReadOnly: ro})
 	}
 	return out, nil
 }
@@ -225,7 +247,7 @@ func outsideProject(mounts []Mount, project string) []Mount {
 func approvalKey(project string, mounts []Mount) string {
 	lines := make([]string, 0, len(mounts))
 	for _, m := range mounts {
-		lines = append(lines, m.Path+"|"+m.Mode())
+		lines = append(lines, m.Path+"|"+m.Target+"|"+m.Mode())
 	}
 	sort.Strings(lines)
 	sum := sha256.Sum256([]byte(resolveExisting(project) + "\n" + strings.Join(lines, "\n")))
@@ -297,7 +319,7 @@ func approveMounts(mounts []Mount, project string, resuming, dryRun bool) ([]Mou
 	fmt.Println("This project's config mounts host directories into the sandbox:")
 	names := make([]string, 0, len(outside))
 	for _, m := range outside {
-		fmt.Printf("  %s  (%s)\n", m.Path, m.Mode())
+		fmt.Printf("  %s  (%s)\n", m.Label(), m.Mode())
 		names = append(names, m.Path)
 	}
 	fmt.Println("The agent runs with permissions off, so a read-write mount can be changed or deleted without asking.")
@@ -351,7 +373,7 @@ func prepareMounts(specs []string, project, cache string, resuming, dryRun bool)
 		return mounts, nil
 	}
 	for _, m := range mounts {
-		fmt.Printf("Mount: %s (%s)\n", m.Path, m.Mode())
+		fmt.Printf("Mount: %s (%s)\n", m.Label(), m.Mode())
 	}
 	return mounts, nil
 }

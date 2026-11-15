@@ -54,7 +54,7 @@ Config file — .sbx/sbxup.config.yaml, the only location read:
   sandbox: app-claude  # optional: sandbox name (default: <parent>--<folder>--<agent>)
   clone: false         # optional: true => run on a private in-container git clone
   cache: .sbx-cache    # optional: mount local cache dir into sandbox
-  mounts:              # optional: extra host directories; ':ro' for read-only
+  mounts:              # optional: extra host directories; ':ro' for read-only, 'path:/target' to place it
     - ~/shared-libs:ro
     - ../docs
   github:              # optional: a GitHub token for the sandbox, in one of two modes
@@ -266,6 +266,10 @@ func run(argv []string) error {
 		// sbxup reads one path only. Naming the stale file turns a puzzling "agent is
 		// required" into an obvious one-line fix.
 		warnf("Found %s, which sbxup no longer reads. Rename it to %s.", legacy, defaultConfigPath)
+	}
+
+	if err := checkSbxVersion(); err != nil {
+		return err
 	}
 
 	agent := firstNonEmpty(o.agent, cfg.Agent, defaultAgent)

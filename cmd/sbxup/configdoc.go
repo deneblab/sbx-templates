@@ -36,7 +36,8 @@ var configDocs = []configDoc{
 	}},
 	{Key: "mounts",
 		Para: []string{
-			"Extra host directories mounted into the sandbox; append :ro for read-only.",
+			"Extra host directories mounted into the sandbox; append :ro for read-only, or",
+			"write path:/target[:ro] to choose where it appears (sbx 0.51+).",
 			"Directories outside the project are approved once; your home directory and",
 			"credential directories such as ~/.ssh are refused.",
 		},
