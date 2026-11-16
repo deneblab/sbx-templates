@@ -384,6 +384,7 @@ func run(argv []string) error {
 				return err
 			}
 			applyKeybindings(sandbox, true, true)
+			applyGitIdentity(sandbox, cwd, true, true)
 			fmt.Printf("[dry-run] sbx %s\n", strings.Join(append([]string{"run", "--name", sandbox}, runExtra...), " "))
 			return nil
 		}
@@ -401,6 +402,7 @@ func run(argv []string) error {
 			return err
 		}
 		applyKeybindings(existing, false, true)
+		applyGitIdentity(existing, cwd, false, true)
 		fmt.Printf("[dry-run] sbx run --name %s\n", existing)
 		return nil
 	}
@@ -418,6 +420,7 @@ func run(argv []string) error {
 		return notStarted(err)
 	}
 	applyKeybindings(existing, fresh, false)
+	applyGitIdentity(existing, cwd, fresh, false)
 
 	if gh != nil {
 		if err := sbxSecretSet(existing, gh.token); err != nil {

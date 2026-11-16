@@ -305,6 +305,18 @@ text paste, so in a sandbox nothing happens. `sbxup` therefore adds **`Alt+V`** 
 - **It never stops a start.** A failure (e.g. a `keybindings.json` that is not valid JSON) is a warning,
   and the next start tries again.
 
+### Git author
+
+A new sandbox has no git identity, so `git commit` fails there. `sbxup` copies yours, as git on the host
+resolves it in the project (`user.name` and `user.email`, repository config over global), into the
+sandbox's `~/.gitconfig`.
+
+- **Only what is missing is set.** An identity already in the sandbox stays. The project's `.git/config`
+  is never written, so the host repository does not change.
+- **No identity on the host** is a warning naming `git config --global`; the sandbox starts anyway.
+- **Once per sandbox, and again when your identity changes.** A record per sandbox sits in your user cache
+  (`sbxup/git-identity/`). A failure is a warning, and the next start tries again.
+
 ### Skills
 
 sbx mounts one shared `agent-skills` store, read-only, into every sandbox, and fills it only on request.

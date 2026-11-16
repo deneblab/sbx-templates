@@ -18,6 +18,7 @@ func TestMain(m *testing.M) {
 	sbxMount = func(string, string, string) error { return noSbx }
 	sbxUmount = func(string, string, string) error { return noSbx }
 	dropSudo = func(string) error { return noSbx }
+	gitIdentity = func(string) (string, string, error) { return "Test", "test@example.invalid", nil }
 	os.Exit(m.Run())
 }
 

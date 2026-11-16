@@ -425,6 +425,25 @@ in mind:
 - **No config key, and a failure is a warning** with no record, so the next start retries. It runs after
   `applyHide` and before the GitHub token, at all three call sites in `run()`.
 
+### Git author (`gitidentity.go`)
+
+A new sandbox has no `user.name`/`user.email`, so `git commit` fails, and Claude will not set git config
+itself (SBXT-025, GitHub #8). `applyGitIdentity` reads the host identity with `git -C <project> config --get`
+(repository over global, as a commit on the host would) and hands it to `sbx exec … sh -c gitIdentityScript`.
+Things worth keeping in mind:
+
+- **`--global` in the sandbox, never the repository.** In direct mode `.git/config` is the host's own file.
+  Not in the image either: the identity is the user's. No config key, for the same reason.
+- **Only missing keys are set**, so an identity set in the sandbox by hand stays, and a changed host
+  identity does not replace one sbxup set earlier (the record is updated, the sandbox keeps the old one).
+- **Name and email go through stdin**, one line each, so no user text is quoted into the command line; a
+  value with a newline, or a missing name or email on the host, is a warning and no exec.
+- **The record** `sbxup/git-identity/<sandbox>.json` holds the identity handed over; a resume with the same
+  one costs no `sbx exec`, `fresh` ignores a stale record. Every failure is a warning with no record.
+- It runs right after `applyKeybindings`, at all three call sites in `run()`.
+- **Seams:** `gitIdentity` (`hostGitIdentity`; `TestMain` returns a fixed identity) and `sbxExecStdin`.
+- **Not yet verified on a host**, nor whether sbx passes an identity of its own (the script would then do nothing).
+
 ## Local Templates Without Docker Hub
 
 Pushes touching `src/**` publish a **`templates-v{version}`** release (`.github/workflows/release-templates.yml`)
